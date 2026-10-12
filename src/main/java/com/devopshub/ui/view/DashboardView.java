@@ -204,7 +204,39 @@ public class DashboardView extends VBox {
             }
         });
 
-        recentProjectsTable.getColumns().addAll(colProjName, colType, colProjStatus);
+        TableColumn<Project, Void> colProjAction = new TableColumn<>("Action");
+        colProjAction.setPrefWidth(90);
+        colProjAction.setCellFactory(col -> new TableCell<>() {
+            private final Button btn = new Button("Inspect");
+            {
+                btn.getStyleClass().add("btn-secondary");
+                btn.setStyle("-fx-padding: 3px 8px; -fx-font-size: 11px;");
+            }
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                } else {
+                    Project p = getTableRow().getItem();
+                    btn.setOnAction(e -> mainLayout.navigateToProjectDetail(p));
+                    setGraphic(btn);
+                }
+            }
+        });
+
+        recentProjectsTable.setRowFactory(tv -> {
+            TableRow<Project> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && (!row.isEmpty())) {
+                    Project p = row.getItem();
+                    mainLayout.navigateToProjectDetail(p);
+                }
+            });
+            return row;
+        });
+
+        recentProjectsTable.getColumns().addAll(colProjName, colType, colProjStatus, colProjAction);
         projSection.getChildren().addAll(projHeader, recentProjectsTable);
 
         contentGrid.getChildren().addAll(execSection, projSection);

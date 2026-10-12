@@ -122,4 +122,16 @@ public class AppConfig {
     public String getWorkspaceDir() {
         return get("EXECUTION_WORKSPACE_DIR", "./workspaces");
     }
+
+    public void set(String key, String value) {
+        configMap.put(key, value);
+    }
+
+    public void setMaxConcurrentPipelines(int count) {
+        set("EXECUTION_MAX_CONCURRENT_PIPELINES", String.valueOf(count));
+    }
+
+    public void setDefaultTimeoutSeconds(int seconds) {
+        set("EXECUTION_DEFAULT_TIMEOUT_SECONDS", String.valueOf(seconds));
+    }
 }

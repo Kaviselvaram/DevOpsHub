@@ -104,6 +104,7 @@ public class ExecutionEngine {
                 if (onUpdate != null) {
                     onUpdate.accept(execution);
                 }
+                notifyExecutionUpdate(execution);
             }
         });
 
@@ -111,8 +112,33 @@ public class ExecutionEngine {
         if (onUpdate != null) {
             onUpdate.accept(execution);
         }
+        notifyExecutionUpdate(execution);
 
         return execution;
+    }
+
+    private final Map<String, List<Consumer<Execution>>> executionListeners = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void addExecutionListener(String executionId, Consumer<Execution> listener) {
+        executionListeners.computeIfAbsent(executionId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(listener);
+    }
+
+    public void removeExecutionListener(String executionId, Consumer<Execution> listener) {
+        List<Consumer<Execution>> list = executionListeners.get(executionId);
+        if (list != null) {
+            list.remove(listener);
+        }
+    }
+
+    private void notifyExecutionUpdate(Execution execution) {
+        List<Consumer<Execution>> list = executionListeners.get(execution.getId());
+        if (list != null) {
+            for (Consumer<Execution> listener : list) {
+                try {
+                    listener.accept(execution);
+                } catch (Exception ignored) {}
+            }
+        }
     }
 
     private void runPipelineWorkflow(Pipeline pipeline, Execution execution, List<StageExecution> stageExecs,
@@ -246,6 +272,8 @@ public class ExecutionEngine {
 
         logCollector.flush();
         executionRepository.update(execution);
+        notifyExecutionUpdate(execution);
+        if (onUpdate != null) onUpdate.accept(execution);
     }
 
     public boolean cancelExecution(String executionId) {

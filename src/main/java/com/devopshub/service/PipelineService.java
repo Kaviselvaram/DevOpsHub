@@ -96,6 +96,14 @@ public class PipelineService {
         pipelineRepository.delete(id);
     }
 
+    public Pipeline duplicatePipeline(String id) {
+        return pipelineRepository.duplicate(id);
+    }
+
+    public List<Pipeline> getPipelinesByProjectId(String projectId) {
+        return pipelineRepository.findByProjectId(projectId);
+    }
+
     public List<Stage> createDefaultStages(String pipelineId) {
         List<Stage> stages = new ArrayList<>();
 

@@ -11,11 +11,17 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 
 /**
- * Settings View: Database connectivity testing, execution pools, and environment diagnostics.
+ * Settings View:
+ * Database connectivity testing with millisecond ping latency,
+ * execution pool tuning with runtime persistence, and environment diagnostics.
  */
 public class SettingsView extends VBox {
 
     private final MainLayoutView mainLayout;
+
+    private Label pingResultLabel;
+    private TextField maxPoolField;
+    private TextField timeoutField;
 
     public SettingsView(MainLayoutView mainLayout) {
         this.mainLayout = mainLayout;
@@ -37,7 +43,7 @@ public class SettingsView extends VBox {
         header.setAlignment(Pos.CENTER_LEFT);
         SvgIcon dbIcon = new SvgIcon(SvgIcon.IconName.DATABASE, 18, Color.web("#0284C7"));
         Label title = new Label("Database Connectivity Settings");
-        title.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        title.getStyleClass().add("card-header");
         header.getChildren().addAll(dbIcon, title);
 
         AppConfig config = AppConfig.getInstance();
@@ -59,7 +65,7 @@ public class SettingsView extends VBox {
         TextField userField = new TextField(config.getDbUser());
         userField.setEditable(false);
 
-        Label modeLabel = new Label(isH2 ? "H2 In-Memory Fallback Mode" : "Primary MySQL 8.0 Server");
+        Label modeLabel = new Label(isH2 ? "H2 In-Memory Fallback Mode" : "Primary MySQL 8.0 Server (Port 3306)");
         modeLabel.setStyle(String.format("-fx-font-weight: bold; -fx-text-fill: %s;", isH2 ? "#D97706" : "#059669"));
 
         grid.add(new Label("Database Engine:"), 0, 0);
@@ -80,15 +86,19 @@ public class SettingsView extends VBox {
         testConnBtn.getStyleClass().add("btn-secondary");
         testConnBtn.setGraphic(new SvgIcon(SvgIcon.IconName.CHECK_CIRCLE, 12, Color.web("#059669")));
         testConnBtn.setOnAction(e -> {
-            boolean valid = DatabaseManager.getInstance().testConnection();
-            if (valid) {
-                mainLayout.showToast("Database connection verified successfully!", ToastNotification.ToastType.SUCCESS);
+            long latency = DatabaseManager.getInstance().pingLatencyMillis();
+            if (latency >= 0) {
+                pingResultLabel.setText(String.format("✓ Connected (Ping: %d ms)", latency));
+                pingResultLabel.setStyle("-fx-text-fill: #059669; -fx-font-weight: bold;");
+                mainLayout.showToast(String.format("Database connected! Latency: %d ms", latency), ToastNotification.ToastType.SUCCESS);
             } else {
-                mainLayout.showToast("Database connection test failed. Inspect connection parameters.", ToastNotification.ToastType.ERROR);
+                pingResultLabel.setText("✗ Connection Failed");
+                pingResultLabel.setStyle("-fx-text-fill: #E11D48; -fx-font-weight: bold;");
+                mainLayout.showToast("Database connection test failed. Check MySQL status on port 3306.", ToastNotification.ToastType.ERROR);
             }
         });
 
-        Button runMigrationsBtn = new Button("Re-run Schema Migrations");
+        Button runMigrationsBtn = new Button("Re-apply Migrations");
         runMigrationsBtn.getStyleClass().add("btn-secondary");
         runMigrationsBtn.setGraphic(new SvgIcon(SvgIcon.IconName.REFRESH, 12, Color.web("#0284C7")));
         runMigrationsBtn.setOnAction(e -> {
@@ -100,7 +110,10 @@ public class SettingsView extends VBox {
             }
         });
 
-        btnBox.getChildren().addAll(testConnBtn, runMigrationsBtn);
+        pingResultLabel = new Label();
+        pingResultLabel.setStyle("-fx-font-size: 12px;");
+
+        btnBox.getChildren().addAll(testConnBtn, runMigrationsBtn, pingResultLabel);
         card.getChildren().addAll(header, grid, btnBox);
         this.getChildren().add(card);
     }
@@ -113,7 +126,7 @@ public class SettingsView extends VBox {
         header.setAlignment(Pos.CENTER_LEFT);
         SvgIcon cpuIcon = new SvgIcon(SvgIcon.IconName.CPU, 18, Color.web("#0D9488"));
         Label title = new Label("Execution Engine & Concurrency Settings");
-        title.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        title.getStyleClass().add("card-header");
         header.getChildren().addAll(cpuIcon, title);
 
         AppConfig config = AppConfig.getInstance();
@@ -122,23 +135,38 @@ public class SettingsView extends VBox {
         grid.setHgap(16);
         grid.setVgap(10);
 
-        TextField maxPoolField = new TextField(String.valueOf(config.getMaxConcurrentPipelines()));
-        maxPoolField.setEditable(false);
-
-        TextField timeoutField = new TextField(config.getDefaultTimeoutSeconds() + " seconds");
-        timeoutField.setEditable(false);
+        maxPoolField = new TextField(String.valueOf(config.getMaxConcurrentPipelines()));
+        timeoutField = new TextField(String.valueOf(config.getDefaultTimeoutSeconds()));
 
         TextField wsField = new TextField(config.getWorkspaceDir());
         wsField.setEditable(false);
 
         grid.add(new Label("Max Concurrent Pipelines:"), 0, 0);
         grid.add(maxPoolField, 1, 0);
-        grid.add(new Label("Default Stage Timeout:"), 2, 0);
+        grid.add(new Label("Default Stage Timeout (s):"), 2, 0);
         grid.add(timeoutField, 3, 0);
         grid.add(new Label("Workspace Directory:"), 0, 1);
         grid.add(wsField, 1, 1);
 
-        card.getChildren().addAll(header, grid);
+        HBox actionBox = new HBox(12);
+        actionBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button saveSettingsBtn = new Button("Save Execution Settings");
+        saveSettingsBtn.getStyleClass().add("btn-primary");
+        saveSettingsBtn.setOnAction(e -> {
+            try {
+                int pool = Integer.parseInt(maxPoolField.getText().trim());
+                int timeout = Integer.parseInt(timeoutField.getText().trim());
+                config.setMaxConcurrentPipelines(pool);
+                config.setDefaultTimeoutSeconds(timeout);
+                mainLayout.showToast("Execution settings saved successfully!", ToastNotification.ToastType.SUCCESS);
+            } catch (NumberFormatException ex) {
+                mainLayout.showToast("Invalid number format for pool size or timeout.", ToastNotification.ToastType.ERROR);
+            }
+        });
+
+        actionBox.getChildren().add(saveSettingsBtn);
+        card.getChildren().addAll(header, grid, actionBox);
         this.getChildren().add(card);
     }
 
@@ -147,7 +175,7 @@ public class SettingsView extends VBox {
         card.getStyleClass().add("card");
 
         Label title = new Label("Environment & Platform Diagnostics");
-        title.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        title.getStyleClass().add("card-header");
 
         Label javaVer = new Label("• Java Runtime: " + System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")");
         Label osName = new Label("• Operating System: " + System.getProperty("os.name") + " (" + System.getProperty("os.arch") + ")");

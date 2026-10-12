@@ -101,6 +101,16 @@ public class DatabaseManager {
         }
     }
 
+    public long pingLatencyMillis() {
+        long start = System.currentTimeMillis();
+        try (Connection conn = getConnection()) {
+            if (conn.isValid(3)) {
+                return System.currentTimeMillis() - start;
+            }
+        } catch (SQLException ignored) {}
+        return -1;
+    }
+
     public void applyMigrations() {
         logger.info("Applying database migrations...");
         executeSqlScript("/db/migrations/V1__initial_schema.sql");

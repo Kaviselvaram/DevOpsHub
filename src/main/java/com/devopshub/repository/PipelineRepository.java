@@ -164,6 +164,44 @@ public class PipelineRepository {
         }
     }
 
+    public Pipeline duplicate(String sourcePipelineId) {
+        Optional<Pipeline> opt = findById(sourcePipelineId);
+        if (opt.isEmpty()) {
+            throw new DatabaseException("Cannot duplicate: Pipeline not found: " + sourcePipelineId);
+        }
+        Pipeline source = opt.get();
+        String newId = UUID.randomUUID().toString();
+        Pipeline copy = new Pipeline();
+        copy.setId(newId);
+        copy.setProjectId(source.getProjectId());
+        copy.setName(source.getName() + " (Copy)");
+        copy.setDescription(source.getDescription() != null ? source.getDescription() : "");
+        copy.setExecutionMode(source.getExecutionMode());
+        copy.setActive(true);
+        copy.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+
+        List<Stage> newStages = new ArrayList<>();
+        if (source.getStages() != null) {
+            for (Stage s : source.getStages()) {
+                Stage stageCopy = new Stage(
+                        UUID.randomUUID().toString(),
+                        newId,
+                        s.getName(),
+                        s.getStageType(),
+                        s.getStageOrder(),
+                        s.getCommand(),
+                        s.getTimeoutSeconds(),
+                        s.isEnabled(),
+                        s.getParallelGroup()
+                );
+                newStages.add(stageCopy);
+            }
+        }
+        copy.setStages(newStages);
+        save(copy);
+        return copy;
+    }
+
     public int count() {
         String sql = "SELECT COUNT(*) FROM pipelines";
         try (Connection conn = dbManager.getConnection();

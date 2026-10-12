@@ -66,4 +66,16 @@ public class DashboardService {
     public List<Project> getRecentProjects() {
         return projectRepository.findAll();
     }
+
+    public java.util.Map<String, Integer> getFrequentlyFailingPipelines() {
+        List<Execution> runs = executionRepository.findAll();
+        java.util.Map<String, Integer> failMap = new java.util.LinkedHashMap<>();
+        for (Execution e : runs) {
+            if (e.getStatus() == ExecutionStatus.FAILED) {
+                String pName = e.getPipelineName() != null ? e.getPipelineName() : "Unknown Pipeline";
+                failMap.put(pName, failMap.getOrDefault(pName, 0) + 1);
+            }
+        }
+        return failMap;
+    }
 }

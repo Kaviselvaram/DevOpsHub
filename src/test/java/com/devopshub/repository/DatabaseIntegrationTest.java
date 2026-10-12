@@ -124,4 +124,47 @@ class DatabaseIntegrationTest {
         assertEquals(FailureCategory.ASSERTION_FAILURE, fetched.getCategory());
         assertEquals("RULE_TEST_01", fetched.getRuleId());
     }
+
+    @Test
+    @DisplayName("Verify Pipeline duplication with copied stages")
+    void testPipelineDuplication() {
+        String pipeId = "dup-pipe-" + UUID.randomUUID();
+        Pipeline p = new Pipeline(pipeId, "proj-001", "Original Pipeline", "Desc", "SEQUENTIAL", true);
+        Stage s1 = new Stage(UUID.randomUUID().toString(), pipeId, "S1", StageType.BUILD, 1, "echo 1", 60, true, null);
+        p.setStages(List.of(s1));
+        pipelineRepository.save(p);
+
+        Pipeline copy = pipelineRepository.duplicate(pipeId);
+        assertNotNull(copy);
+        assertNotEquals(p.getId(), copy.getId());
+        assertTrue(copy.getName().contains("(Copy)"));
+        assertEquals(1, copy.getStages().size());
+        assertNotEquals(s1.getId(), copy.getStages().get(0).getId());
+
+        pipelineRepository.delete(pipeId);
+        pipelineRepository.delete(copy.getId());
+    }
+
+    @Test
+    @DisplayName("Verify query executions by project and by pipeline")
+    void testExecutionQueryByProjectAndPipeline() {
+        String execId = "query-test-" + UUID.randomUUID();
+        Execution ex = new Execution(execId, "pipe-001", "proj-001", 1001, ExecutionStatus.SUCCESS, TriggerType.MANUAL);
+        executionRepository.save(ex);
+
+        List<Execution> byProj = executionRepository.findByProjectId("proj-001");
+        assertFalse(byProj.isEmpty());
+        assertTrue(byProj.stream().anyMatch(e -> e.getId().equals(execId)));
+
+        List<Execution> byPipe = executionRepository.findByPipelineId("pipe-001");
+        assertFalse(byPipe.isEmpty());
+        assertTrue(byPipe.stream().anyMatch(e -> e.getId().equals(execId)));
+    }
+
+    @Test
+    @DisplayName("Verify ping latency measurement returns valid milliseconds")
+    void testPingLatency() {
+        long latency = dbManager.pingLatencyMillis();
+        assertTrue(latency >= 0, "Ping latency should be non-negative");
+    }
 }

@@ -77,10 +77,24 @@ public class MainLayoutView extends BorderPane {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
+        // Header DB Status indicator
+        boolean isH2 = DatabaseManager.getInstance().isH2Fallback();
+        HBox dbHeaderPill = new HBox(6);
+        dbHeaderPill.setAlignment(Pos.CENTER_LEFT);
+        dbHeaderPill.setStyle("-fx-background-color: #F1F5F9; -fx-padding: 4px 10px; -fx-background-radius: 12px; -fx-cursor: hand;");
+        SvgIcon dbDot = new SvgIcon(SvgIcon.IconName.CHECK_CIRCLE, 12, isH2 ? Color.web("#D97706") : Color.web("#10B981"));
+        Label dbStatusText = new Label(isH2 ? "H2 Database" : "MySQL Connected");
+        dbStatusText.setStyle("-fx-font-size: 11px; -fx-font-weight: 600; -fx-text-fill: #334155;");
+        dbHeaderPill.getChildren().addAll(dbDot, dbStatusText);
+        dbHeaderPill.setOnMouseClicked(e -> {
+            long ms = DatabaseManager.getInstance().pingLatencyMillis();
+            showToast(String.format("Database active: %s (Ping: %d ms)", isH2 ? "H2" : "MySQL 8.0", ms), ToastNotification.ToastType.INFO);
+        });
+
         headerActionsBox = new HBox(10);
         headerActionsBox.setAlignment(Pos.CENTER_RIGHT);
 
-        topHeader.getChildren().addAll(titleBox, spacer, headerActionsBox);
+        topHeader.getChildren().addAll(titleBox, spacer, dbHeaderPill, headerActionsBox);
         centerArea.getChildren().addAll(topHeader, contentStack);
 
         this.setCenter(centerArea);
@@ -256,6 +270,16 @@ public class MainLayoutView extends BorderPane {
     public void navigateToSettings() {
         setView("settings", "Settings", "Database connectivity, workspaces, and execution pools",
                 new SettingsView(this));
+    }
+
+    public void navigateToProjectDetail(Project project) {
+        setView("projects", project.getName(), "Project overview and associated delivery pipelines",
+                new ProjectDetailView(this, project, projectService, pipelineService, executionEngine));
+    }
+
+    public void navigateToPipelineDetail(Pipeline pipeline) {
+        setView("pipelines", pipeline.getName(), "Pipeline topology and historical execution runs",
+                new PipelineDetailView(this, pipeline, pipelineService, executionEngine));
     }
 
     public Stage getPrimaryStage() {

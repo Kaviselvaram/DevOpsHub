@@ -18,10 +18,12 @@ import javafx.scene.paint.Color;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Execution Details View matching Slide 8 & 12 specifications.
- * Stage visualizer, real-time log output, and intelligent rule-based failure diagnosis.
+ * Stage visualizer, real-time log output, interactive stage log filtering,
+ * and intelligent rule-based failure diagnosis.
  */
 public class ExecutionDetailView extends VBox {
 
@@ -41,6 +43,10 @@ public class ExecutionDetailView extends VBox {
     private HBox stageCardsContainer;
     private VBox diagnosisPanel;
     private TextArea terminalArea;
+    private Label logFilterLabel;
+    private String selectedStageIdFilter = null;
+
+    private Consumer<Execution> liveUpdateListener;
 
     public ExecutionDetailView(MainLayoutView mainLayout, String executionId, ExecutionEngine executionEngine) {
         this.mainLayout = mainLayout;
@@ -54,6 +60,7 @@ public class ExecutionDetailView extends VBox {
         this.setPadding(new Insets(24));
         this.setStyle("-fx-background-color: transparent;");
 
+        buildBreadcrumb();
         buildHeaderCard();
         buildStagePipelineSection();
         buildDiagnosisSection();
@@ -63,6 +70,24 @@ public class ExecutionDetailView extends VBox {
         setupLiveListener();
     }
 
+    private void buildBreadcrumb() {
+        HBox breadcrumb = new HBox(6);
+        breadcrumb.getStyleClass().add("breadcrumb-bar");
+
+        Label parentLink = new Label("Executions");
+        parentLink.getStyleClass().add("breadcrumb-item");
+        parentLink.setOnMouseClicked(e -> mainLayout.navigateToExecutions());
+
+        Label separator = new Label("/");
+        separator.getStyleClass().add("breadcrumb-separator");
+
+        Label current = new Label("Build Details: " + executionId.substring(0, Math.min(8, executionId.length())));
+        current.getStyleClass().add("breadcrumb-current");
+
+        breadcrumb.getChildren().addAll(parentLink, separator, current);
+        this.getChildren().add(breadcrumb);
+    }
+
     private void buildHeaderCard() {
         HBox headerCard = new HBox(16);
         headerCard.getStyleClass().add("card");
@@ -70,7 +95,7 @@ public class ExecutionDetailView extends VBox {
 
         VBox infoBox = new VBox(4);
         buildTitleLabel = new Label("BUILD #... / LOADING");
-        buildTitleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        buildTitleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #0F172A;");
 
         buildMetaLabel = new Label("Pipeline: Loading | Project: Loading");
         buildMetaLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B;");
@@ -94,20 +119,40 @@ public class ExecutionDetailView extends VBox {
             }
         });
 
+        Button backBtn = new Button("Back to Runs");
+        backBtn.getStyleClass().add("btn-secondary");
+        backBtn.setOnAction(e -> mainLayout.navigateToExecutions());
+
         Button refreshBtn = new Button("Refresh");
         refreshBtn.getStyleClass().add("btn-secondary");
         refreshBtn.setGraphic(new SvgIcon(SvgIcon.IconName.REFRESH, 12, Color.web("#64748B")));
         refreshBtn.setOnAction(e -> loadExecutionData());
 
-        badgeContainer.getChildren().addAll(cancelBtn, refreshBtn);
+        badgeContainer.getChildren().addAll(cancelBtn, backBtn, refreshBtn);
         headerCard.getChildren().addAll(infoBox, spacer, badgeContainer);
         this.getChildren().add(headerCard);
     }
 
     private void buildStagePipelineSection() {
         VBox section = new VBox(10);
-        Label sectionTitle = new Label("Pipeline Execution Stages");
-        sectionTitle.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        HBox secHeader = new HBox(10);
+        secHeader.setAlignment(Pos.CENTER_LEFT);
+        Label sectionTitle = new Label("Pipeline Execution Stages (Click a stage to filter logs)");
+        sectionTitle.getStyleClass().add("card-header");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button showAllStagesBtn = new Button("Show All Stage Logs");
+        showAllStagesBtn.getStyleClass().add("btn-secondary");
+        showAllStagesBtn.setStyle("-fx-padding: 3px 8px; -fx-font-size: 11px;");
+        showAllStagesBtn.setOnAction(e -> {
+            selectedStageIdFilter = null;
+            updateLogFilterBanner();
+            reloadLogs();
+        });
+
+        secHeader.getChildren().addAll(sectionTitle, spacer, showAllStagesBtn);
 
         ScrollPane scroll = new ScrollPane();
         scroll.setFitToHeight(true);
@@ -118,7 +163,7 @@ public class ExecutionDetailView extends VBox {
         stageCardsContainer.setPadding(new Insets(4, 4, 8, 4));
 
         scroll.setContent(stageCardsContainer);
-        section.getChildren().addAll(sectionTitle, scroll);
+        section.getChildren().addAll(secHeader, scroll);
         this.getChildren().add(section);
     }
 
@@ -138,13 +183,16 @@ public class ExecutionDetailView extends VBox {
         consoleHeader.setAlignment(Pos.CENTER_LEFT);
 
         SvgIcon termIcon = new SvgIcon(SvgIcon.IconName.TERMINAL, 16, Color.web("#0284C7"));
-        Label termTitle = new Label("Execution Output Log (Standard Out / Standard Error)");
+        Label termTitle = new Label("Execution Console Output");
         termTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #0F172A;");
+
+        logFilterLabel = new Label("(Showing All Stages)");
+        logFilterLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #0284C7; -fx-font-weight: bold;");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button copyLogsBtn = new Button("Copy Logs");
+        Button copyLogsBtn = new Button("Copy Output");
         copyLogsBtn.getStyleClass().add("btn-secondary");
         copyLogsBtn.setGraphic(new SvgIcon(SvgIcon.IconName.COPY, 12, Color.web("#64748B")));
         copyLogsBtn.setOnAction(e -> {
@@ -155,7 +203,7 @@ public class ExecutionDetailView extends VBox {
             mainLayout.showToast("Logs copied to clipboard", ToastNotification.ToastType.SUCCESS);
         });
 
-        consoleHeader.getChildren().addAll(termIcon, termTitle, spacer, copyLogsBtn);
+        consoleHeader.getChildren().addAll(termIcon, termTitle, logFilterLabel, spacer, copyLogsBtn);
 
         terminalArea = new TextArea();
         terminalArea.setEditable(false);
@@ -168,7 +216,38 @@ public class ExecutionDetailView extends VBox {
         this.getChildren().add(consoleCard);
     }
 
-    private void loadExecutionData() {
+    private void updateLogFilterBanner() {
+        if (selectedStageIdFilter == null) {
+            logFilterLabel.setText("(Showing All Stages)");
+        } else {
+            String name = "Selected Stage";
+            if (currentExecution != null && currentExecution.getStageExecutions() != null) {
+                for (StageExecution se : currentExecution.getStageExecutions()) {
+                    if (se.getId().equals(selectedStageIdFilter)) {
+                        name = se.getStageName();
+                        break;
+                    }
+                }
+            }
+            logFilterLabel.setText("(Filtered to: " + name + ")");
+        }
+    }
+
+    private void reloadLogs() {
+        List<ExecutionLog> logs = logRepository.findByExecutionId(executionId);
+        StringBuilder sb = new StringBuilder();
+        for (ExecutionLog l : logs) {
+            if (selectedStageIdFilter != null && l.getStageExecutionId() != null
+                    && !l.getStageExecutionId().equals(selectedStageIdFilter)) {
+                continue;
+            }
+            sb.append(l.getMessage()).append("\n");
+        }
+        terminalArea.setText(sb.toString());
+        terminalArea.positionCaret(terminalArea.getText().length());
+    }
+
+    public void loadExecutionData() {
         Optional<Execution> opt = executionRepository.findById(executionId);
         if (opt.isEmpty()) return;
 
@@ -187,7 +266,7 @@ public class ExecutionDetailView extends VBox {
         cancelBtn.setVisible(currentExecution.getStatus() == ExecutionStatus.RUNNING);
 
         // Update Header Badge
-        if (badgeContainer.getChildren().size() > 2) {
+        if (badgeContainer.getChildren().size() > 3) {
             badgeContainer.getChildren().remove(0);
         }
         badgeContainer.getChildren().add(0, StatusBadge.of(currentExecution.getStatus()));
@@ -215,20 +294,14 @@ public class ExecutionDetailView extends VBox {
             diagnosisPanel.setManaged(false);
         }
 
-        // Populate Logs
-        List<ExecutionLog> logs = logRepository.findByExecutionId(executionId);
-        StringBuilder sb = new StringBuilder();
-        for (ExecutionLog l : logs) {
-            sb.append(l.getMessage()).append("\n");
-        }
-        terminalArea.setText(sb.toString());
-        terminalArea.positionCaret(terminalArea.getText().length());
+        reloadLogs();
     }
 
     private VBox createStageCard(StageExecution se, int stepNum) {
         VBox card = new VBox(6);
         card.getStyleClass().add("stage-card");
         card.setPrefWidth(160);
+        card.setStyle("-fx-cursor: hand;");
 
         if (se.getStatus() == StageExecutionStatus.SUCCESS) {
             card.getStyleClass().add("stage-card-success");
@@ -237,6 +310,20 @@ public class ExecutionDetailView extends VBox {
         } else if (se.getStatus() == StageExecutionStatus.RUNNING) {
             card.getStyleClass().add("stage-card-running");
         }
+
+        if (se.getId().equals(selectedStageIdFilter)) {
+            card.setStyle("-fx-cursor: hand; -fx-border-width: 2px; -fx-border-color: #0284C7;");
+        }
+
+        card.setOnMouseClicked(e -> {
+            if (se.getId().equals(selectedStageIdFilter)) {
+                selectedStageIdFilter = null;
+            } else {
+                selectedStageIdFilter = se.getId();
+            }
+            updateLogFilterBanner();
+            loadExecutionData();
+        });
 
         Label stepLabel = new Label("STAGE " + stepNum);
         stepLabel.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #64748B;");
@@ -295,12 +382,32 @@ public class ExecutionDetailView extends VBox {
         // Suggested Action Box (Slide 8 style)
         VBox actionBox = new VBox(4);
         actionBox.getStyleClass().add("recommendation-box");
+
+        HBox actionHeader = new HBox(8);
+        actionHeader.setAlignment(Pos.CENTER_LEFT);
         Label actionTitle = new Label("RECOMMENDED RECOVERY ACTION:");
         actionTitle.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #065F46;");
+        Region actionSpacer = new Region();
+        HBox.setHgrow(actionSpacer, Priority.ALWAYS);
+
+        Button copyActionBtn = new Button("Copy Recommendation");
+        copyActionBtn.getStyleClass().add("btn-secondary");
+        copyActionBtn.setStyle("-fx-padding: 2px 8px; -fx-font-size: 10px;");
+        copyActionBtn.setOnAction(e -> {
+            if (d != null && d.getSuggestedAction() != null) {
+                javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
+                javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+                content.putString(d.getSuggestedAction());
+                clipboard.setContent(content);
+                mainLayout.showToast("Recommendation copied to clipboard", ToastNotification.ToastType.SUCCESS);
+            }
+        });
+        actionHeader.getChildren().addAll(actionTitle, actionSpacer, copyActionBtn);
+
         Label actionText = new Label(d != null ? d.getSuggestedAction() : "Inspect logs and re-run.");
         actionText.setStyle("-fx-font-size: 13px; -fx-text-fill: #047857; -fx-font-weight: bold;");
         actionText.setWrapText(true);
-        actionBox.getChildren().addAll(actionTitle, actionText);
+        actionBox.getChildren().addAll(actionHeader, actionText);
 
         diagnosisPanel.getChildren().addAll(diagHeader, titleLabel, likelyCause, evidenceBox, actionBox);
     }
@@ -309,9 +416,15 @@ public class ExecutionDetailView extends VBox {
         LogCollector activeCollector = executionEngine.getActiveLogCollector(executionId);
         if (activeCollector != null) {
             activeCollector.addListener(log -> Platform.runLater(() -> {
-                terminalArea.appendText(log.getMessage() + "\n");
-                terminalArea.positionCaret(terminalArea.getText().length());
+                if (selectedStageIdFilter == null ||
+                        (log.getStageExecutionId() != null && log.getStageExecutionId().equals(selectedStageIdFilter))) {
+                    terminalArea.appendText(log.getMessage() + "\n");
+                    terminalArea.positionCaret(terminalArea.getText().length());
+                }
             }));
         }
+
+        liveUpdateListener = ex -> Platform.runLater(this::loadExecutionData);
+        executionEngine.addExecutionListener(executionId, liveUpdateListener);
     }
 }

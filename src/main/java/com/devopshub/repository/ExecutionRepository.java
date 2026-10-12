@@ -75,6 +75,62 @@ public class ExecutionRepository {
         return list;
     }
 
+    public List<Execution> findByProjectId(String projectId) {
+        String sql = "SELECT e.*, pl.name as pipeline_name, pr.name as project_name " +
+                "FROM executions e " +
+                "JOIN pipelines pl ON e.pipeline_id = pl.id " +
+                "JOIN projects pr ON e.project_id = pr.id " +
+                "WHERE e.project_id = ? " +
+                "ORDER BY e.created_at DESC";
+        List<Execution> list = new ArrayList<>();
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, projectId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapExecution(rs));
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("Failed to query executions by project id: {}", e.getMessage());
+            throw new DatabaseException("Failed to query executions by project id", e);
+        }
+
+        for (Execution ex : list) {
+            ex.setStageExecutions(findStageExecutionsByExecutionId(ex.getId()));
+        }
+
+        return list;
+    }
+
+    public List<Execution> findByPipelineId(String pipelineId) {
+        String sql = "SELECT e.*, pl.name as pipeline_name, pr.name as project_name " +
+                "FROM executions e " +
+                "JOIN pipelines pl ON e.pipeline_id = pl.id " +
+                "JOIN projects pr ON e.project_id = pr.id " +
+                "WHERE e.pipeline_id = ? " +
+                "ORDER BY e.created_at DESC";
+        List<Execution> list = new ArrayList<>();
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, pipelineId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapExecution(rs));
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("Failed to query executions by pipeline id: {}", e.getMessage());
+            throw new DatabaseException("Failed to query executions by pipeline id", e);
+        }
+
+        for (Execution ex : list) {
+            ex.setStageExecutions(findStageExecutionsByExecutionId(ex.getId()));
+        }
+
+        return list;
+    }
+
     public Optional<Execution> findById(String id) {
         String sql = "SELECT e.*, pl.name as pipeline_name, pr.name as project_name " +
                 "FROM executions e " +
