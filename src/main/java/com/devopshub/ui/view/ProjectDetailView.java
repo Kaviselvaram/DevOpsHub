@@ -87,14 +87,14 @@ public class ProjectDetailView extends VBox {
         titleRow.setAlignment(Pos.CENTER_LEFT);
 
         Label nameLabel = new Label(project.getName());
-        nameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #0F172A;");
+        nameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
 
         StatusBadge statusBadge = new StatusBadge(project.getStatus());
         titleRow.getChildren().addAll(nameLabel, statusBadge);
 
         Label descLabel = new Label(project.getDescription() != null && !project.getDescription().isEmpty()
                 ? project.getDescription() : "No description provided.");
-        descLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
+        descLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #8A8D9E;");
 
         HBox metaRow = new HBox(16);
         metaRow.setAlignment(Pos.CENTER_LEFT);
@@ -102,11 +102,27 @@ public class ProjectDetailView extends VBox {
 
         Label repoLabel = new Label("Repo: " + project.getRepositoryUrl() + " (" + project.getDefaultBranch() + ")");
         repoLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748B; -fx-font-family: Menlo, monospace;");
+        repoLabel.setWrapText(true);
+        repoLabel.setMinWidth(0);
+
+        Button copyUrlBtn = new Button();
+        copyUrlBtn.setGraphic(new SvgIcon(SvgIcon.IconName.SHARE, 11, Color.web("#8A8D9E")));
+        copyUrlBtn.getStyleClass().add("btn-secondary");
+        copyUrlBtn.setStyle("-fx-padding: 2px 6px;");
+        copyUrlBtn.setTooltip(new Tooltip("Copy Repository URL"));
+        copyUrlBtn.setOnAction(e -> {
+            javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+            cc.putString(project.getRepositoryUrl());
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            mainLayout.showToast("Repository URL copied to clipboard!", ToastNotification.ToastType.SUCCESS);
+        });
 
         Label typeLabel = new Label("Type: " + project.getProjectType());
         typeLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #0284C7; -fx-font-weight: bold;");
 
-        metaRow.getChildren().addAll(repoLabel, typeLabel);
+        metaRow.getChildren().addAll(repoLabel, copyUrlBtn, typeLabel);
+        info.setMinWidth(0);
+        HBox.setHgrow(info, Priority.ALWAYS);
         info.getChildren().addAll(titleRow, descLabel, metaRow);
 
         Region spacer = new Region();

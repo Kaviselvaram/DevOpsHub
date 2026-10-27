@@ -58,7 +58,7 @@ public class PipelinesView extends VBox {
         searchField.textProperty().addListener((obs, oldVal, newVal) -> applyFilters());
 
         Label projLabel = new Label("Project:");
-        projLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        projLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
 
         projectFilter = new ComboBox<>();
         projectFilter.setPrefWidth(200);
@@ -250,5 +250,11 @@ public class PipelinesView extends VBox {
 
     public void refresh() {
         applyFilters();
+    }
+
+    public void setSearchQuery(String query) {
+        if (searchField != null) {
+            searchField.setText(query != null ? query : "");
+        }
     }
 }

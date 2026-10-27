@@ -24,6 +24,7 @@ public class AppConfig {
         loadDefaults();
         loadDotEnv();
         loadSystemEnvironment();
+        loadSystemProperties();
     }
 
     public static AppConfig getInstance() {
@@ -43,6 +44,9 @@ public class AppConfig {
         configMap.put("EXECUTION_MAX_CONCURRENT_PIPELINES", "4");
         configMap.put("EXECUTION_DEFAULT_TIMEOUT_SECONDS", "300");
         configMap.put("EXECUTION_WORKSPACE_DIR", "./workspaces");
+        configMap.put("GIT_TIMEOUT_SECONDS", "300");
+        configMap.put("ALLOW_REMOTE_REPOS_AS_TRUSTED", "false");
+        configMap.put("ALLOW_HOST_EXECUTION_FOR_TRUSTED", "true");
     }
 
     private void loadDotEnv() {
@@ -78,6 +82,12 @@ public class AppConfig {
     private void loadSystemEnvironment() {
         for (Map.Entry<String, String> entry : System.getenv().entrySet()) {
             configMap.put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void loadSystemProperties() {
+        for (String key : System.getProperties().stringPropertyNames()) {
+            configMap.put(key, System.getProperty(key));
         }
     }
 
@@ -123,6 +133,10 @@ public class AppConfig {
         return get("EXECUTION_WORKSPACE_DIR", "./workspaces");
     }
 
+    public int getGitTimeoutSeconds() {
+        return getInt("GIT_TIMEOUT_SECONDS", 300);
+    }
+
     public void set(String key, String value) {
         configMap.put(key, value);
     }
@@ -133,5 +147,9 @@ public class AppConfig {
 
     public void setDefaultTimeoutSeconds(int seconds) {
         set("EXECUTION_DEFAULT_TIMEOUT_SECONDS", String.valueOf(seconds));
+    }
+
+    public void setGitTimeoutSeconds(int seconds) {
+        set("GIT_TIMEOUT_SECONDS", String.valueOf(seconds));
     }
 }

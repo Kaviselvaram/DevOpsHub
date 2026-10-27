@@ -32,6 +32,7 @@ public class SettingsView extends VBox {
 
         buildDatabaseSettings();
         buildExecutionSettings();
+        buildWebhookAndSchedulerSettings();
         buildSystemInfo();
     }
 
@@ -48,6 +49,7 @@ public class SettingsView extends VBox {
 
         AppConfig config = AppConfig.getInstance();
         boolean isH2 = DatabaseManager.getInstance().isH2Fallback();
+        boolean isMem = DatabaseManager.getInstance().isH2InMemory();
 
         GridPane grid = new GridPane();
         grid.setHgap(16);
@@ -65,8 +67,12 @@ public class SettingsView extends VBox {
         TextField userField = new TextField(config.getDbUser());
         userField.setEditable(false);
 
-        Label modeLabel = new Label(isH2 ? "H2 In-Memory Fallback Mode" : "Primary MySQL 8.0 Server (Port 3306)");
-        modeLabel.setStyle(String.format("-fx-font-weight: bold; -fx-text-fill: %s;", isH2 ? "#D97706" : "#059669"));
+        String engineText = isH2 ?
+                (isMem ? "H2 In-Memory Fallback Mode (Ephemeral)" : "H2 Embedded Disk Fallback Mode (./data/devopshub)") :
+                "Primary MySQL 8.0 Server (Port 3306 - Persistent)";
+        Label modeLabel = new Label(engineText);
+        modeLabel.setStyle(String.format("-fx-font-weight: bold; -fx-text-fill: %s;",
+                isH2 ? (isMem ? "#D97706" : "#0284C7") : "#059669"));
 
         grid.add(new Label("Database Engine:"), 0, 0);
         grid.add(modeLabel, 1, 0);
@@ -170,6 +176,126 @@ public class SettingsView extends VBox {
         this.getChildren().add(card);
     }
 
+    private void buildWebhookAndSchedulerSettings() {
+        VBox card = new VBox(14);
+        card.getStyleClass().add("card");
+
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+        SvgIcon hookIcon = new SvgIcon(SvgIcon.IconName.TERMINAL, 18, Color.web("#8B5CF6"));
+        Label title = new Label("HTTP Webhooks & Automated Schedulers");
+        title.getStyleClass().add("card-header");
+        header.getChildren().addAll(hookIcon, title);
+
+        var webhook = com.devopshub.webhook.WebhookServerService.getInstance();
+        var scheduler = com.devopshub.scheduler.PipelineSchedulerService.getInstance();
+
+        GridPane grid = new GridPane();
+        grid.setHgap(16);
+        grid.setVgap(10);
+
+        Label serverStatus = new Label(webhook.isRunning() ?
+                "Active on http://localhost:" + webhook.getPort() + "/api/webhook/trigger" : "Server Inactive");
+        serverStatus.setStyle(String.format("-fx-font-weight: bold; -fx-text-fill: %s;", webhook.isRunning() ? "#10B981" : "#F43F5E"));
+
+        TextField tokenField = new TextField(webhook.getConfiguredSecretToken());
+        tokenField.setPromptText("Webhook Secret Token");
+
+        int activeJobsCount = scheduler.getScheduledJobs().size();
+        Label schedulerStatus = new Label(activeJobsCount + " active scheduled jobs configured");
+        schedulerStatus.setStyle("-fx-text-fill: #8A8D9E;");
+
+        grid.add(new Label("Webhook Endpoint:"), 0, 0);
+        grid.add(serverStatus, 1, 0);
+        grid.add(new Label("Secret Token:"), 0, 1);
+        grid.add(tokenField, 1, 1);
+        grid.add(new Label("Scheduler Status:"), 0, 2);
+        grid.add(schedulerStatus, 1, 2);
+
+        HBox btnBox = new HBox(12);
+        btnBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button toggleBtn = new Button(webhook.isRunning() ? "Stop Webhook Server" : "Start Webhook Server");
+        toggleBtn.getStyleClass().add("btn-secondary");
+        toggleBtn.setOnAction(e -> {
+            try {
+                if (webhook.isRunning()) {
+                    webhook.stopServer();
+                    mainLayout.showToast("Webhook server stopped.", ToastNotification.ToastType.INFO);
+                } else {
+                    webhook.startServer();
+                    mainLayout.showToast("Webhook server started on port " + webhook.getPort(), ToastNotification.ToastType.SUCCESS);
+                }
+                serverStatus.setText(webhook.isRunning() ?
+                        "Active on http://localhost:" + webhook.getPort() + "/api/webhook/trigger" : "Server Inactive");
+                serverStatus.setStyle(String.format("-fx-font-weight: bold; -fx-text-fill: %s;", webhook.isRunning() ? "#10B981" : "#F43F5E"));
+                toggleBtn.setText(webhook.isRunning() ? "Stop Webhook Server" : "Start Webhook Server");
+            } catch (Exception ex) {
+                mainLayout.showToast("Failed to toggle webhook server: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
+            }
+        });
+
+        Button saveTokenBtn = new Button("Save Webhook Secret");
+        saveTokenBtn.getStyleClass().add("btn-primary");
+        saveTokenBtn.setOnAction(e -> {
+            String t = tokenField.getText().trim();
+            webhook.setConfiguredSecretToken(t);
+            mainLayout.showToast("Webhook secret token saved!", ToastNotification.ToastType.SUCCESS);
+        });
+
+        btnBox.getChildren().addAll(toggleBtn, saveTokenBtn);
+
+        // Active Scheduled Jobs Section (UI-01)
+        VBox schedulesContainer = new VBox(8);
+        schedulesContainer.setStyle("-fx-padding: 14px 0 0 0;");
+
+        Label schedulesHeader = new Label("Active Pipeline Schedules");
+        schedulesHeader.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0; -fx-font-size: 13px;");
+        schedulesContainer.getChildren().add(schedulesHeader);
+
+        var jobs = scheduler.getScheduledJobs();
+        if (jobs.isEmpty()) {
+            Label emptySchedules = new Label("No automated pipeline schedules configured. Open any pipeline in Pipelines view to configure schedules.");
+            emptySchedules.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748B;");
+            schedulesContainer.getChildren().add(emptySchedules);
+        } else {
+            for (var job : jobs) {
+                HBox jobRow = new HBox(12);
+                jobRow.setAlignment(Pos.CENTER_LEFT);
+                jobRow.setStyle("-fx-background-color: #12131F; -fx-padding: 8px 12px; -fx-background-radius: 6px; -fx-border-color: #26283C;");
+
+                Label name = new Label(job.getPipelineName());
+                name.setStyle("-fx-font-weight: bold; -fx-text-fill: #38BDF8;");
+
+                Label interval = new Label("Runs every " + (job.getIntervalSeconds() >= 60 ? (job.getIntervalSeconds() / 60) + "m" : job.getIntervalSeconds() + "s"));
+                interval.setStyle("-fx-text-fill: #94A3B8; -fx-font-size: 11px;");
+
+                Region sp = new Region();
+                HBox.setHgrow(sp, Priority.ALWAYS);
+
+                Button unschBtn = new Button("Unschedule");
+                unschBtn.getStyleClass().add("btn-secondary");
+                unschBtn.setStyle("-fx-font-size: 10px; -fx-text-fill: #F43F5E; -fx-padding: 3px 8px;");
+                unschBtn.setOnAction(ev -> {
+                    scheduler.unschedulePipeline(job.getPipelineId());
+                    mainLayout.showToast("Unscheduled " + job.getPipelineName(), ToastNotification.ToastType.INFO);
+                    mainLayout.navigateToSettings();
+                });
+
+                jobRow.getChildren().addAll(name, interval, sp, unschBtn);
+                schedulesContainer.getChildren().add(jobRow);
+            }
+        }
+
+        Label desktopDisclaimer = new Label("Note: Automated schedules execute while DevOpsHub desktop application is active. When the desktop app exits, schedules pause until next launch.");
+        desktopDisclaimer.setWrapText(true);
+        desktopDisclaimer.setStyle("-fx-font-size: 11px; -fx-text-fill: #F59E0B;");
+        schedulesContainer.getChildren().add(desktopDisclaimer);
+
+        card.getChildren().addAll(header, grid, btnBox, new Separator(), schedulesContainer);
+        this.getChildren().add(card);
+    }
+
     private void buildSystemInfo() {
         VBox card = new VBox(10);
         card.getStyleClass().add("card");
@@ -182,10 +308,10 @@ public class SettingsView extends VBox {
         Label javafxVer = new Label("• JavaFX Version: 21.0.6 (OpenJFX native desktop)");
         Label academic = new Label("• Course Context: CSE1007 — Java Programming (DevOpsHub Intelligent CI/CD Platform)");
 
-        javaVer.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        osName.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        javafxVer.setStyle("-fx-text-fill: #475569; -fx-font-size: 12px;");
-        academic.setStyle("-fx-text-fill: #0284C7; -fx-font-weight: bold; -fx-font-size: 12px;");
+        javaVer.setStyle("-fx-text-fill: #8A8D9E; -fx-font-size: 12px;");
+        osName.setStyle("-fx-text-fill: #8A8D9E; -fx-font-size: 12px;");
+        javafxVer.setStyle("-fx-text-fill: #8A8D9E; -fx-font-size: 12px;");
+        academic.setStyle("-fx-text-fill: #38BDF8; -fx-font-weight: bold; -fx-font-size: 12px;");
 
         card.getChildren().addAll(title, javaVer, osName, javafxVer, academic);
         this.getChildren().add(card);

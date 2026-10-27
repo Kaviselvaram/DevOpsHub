@@ -22,6 +22,13 @@ public class MainApp extends Application {
         // Initialize Database Connection Pool & Auto-migrations
         DatabaseManager.getInstance();
 
+        // Initialize and start background HTTP Webhook Server
+        try {
+            com.devopshub.webhook.WebhookServerService.getInstance().startServer();
+        } catch (Exception e) {
+            logger.warn("Could not start WebhookServerService: {}", e.getMessage());
+        }
+
         MainLayoutView root = new MainLayoutView(primaryStage);
 
         Scene scene = new Scene(root, 1280, 800);
@@ -35,6 +42,8 @@ public class MainApp extends Application {
         // Graceful shutdown on window close
         primaryStage.setOnCloseRequest(e -> {
             logger.info("Application closing. Performing graceful shutdown of executors and connection pools...");
+            com.devopshub.webhook.WebhookServerService.getInstance().stopServer();
+            com.devopshub.scheduler.PipelineSchedulerService.getInstance().shutdown();
             ExecutionThreadPool.getInstance().shutdown();
             DatabaseManager.getInstance().close();
         });

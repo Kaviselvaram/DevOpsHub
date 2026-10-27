@@ -2,11 +2,22 @@ package com.devopshub.model;
 
 public enum FailureCategory {
     ASSERTION_FAILURE("Assertion / Test Failure"),
-    COMPILATION_ERROR("Compilation Error"),
-    MISSING_DEPENDENCY("Missing Dependency / Artifact"),
-    DATABASE_ERROR("Database Connection / SQL Error"),
+    COMPILATION_ERROR("Compilation / Build Failure"),
+    MISSING_DEPENDENCY("Dependency Installation Failure"),
+    MISSING_BUILD_TOOL("Missing Build Tool / Executable"),
+    REPOSITORY_CHECKOUT_FAILURE("Repository Checkout Failure"),
+    AUTHENTICATION_FAILURE("Authentication Failure"),
+    SECURITY_POLICY_VIOLATION("Security Policy Rejection"),
+    SECURITY_SCANNER_FAILURE("Security Scanner Gate Failure"),
+    ARTIFACT_GENERATION_FAILURE("Artifact Generation Failure"),
+    ARTIFACT_VALIDATION_FAILURE("Artifact Validation Failure"),
+    DEPLOYMENT_FAILURE("Deployment Failure"),
     TIMEOUT("Execution Timeout"),
-    PERMISSION_ERROR("Permission / Access Denied"),
+    CANCELLATION("Execution Cancelled"),
+    PERMISSION_ERROR("Workspace / Access Permission Denied"),
+    CONTAINER_UNAVAILABLE("Container Runtime Unavailable"),
+    DATABASE_ERROR("Database / Persistence Failure"),
+    LOG_COLLECTION_FAILURE("Log Collection Failure"),
     CONFIGURATION_ERROR("Invalid Pipeline Configuration"),
     UNKNOWN("Unclassified Failure");
 

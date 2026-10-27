@@ -9,6 +9,7 @@ import javafx.scene.paint.Color;
 
 /**
  * Reusable Status Badge with SVG Icon.
+ * Supports all execution outcomes including BLOCKED and TIMED_OUT.
  */
 public class StatusBadge extends HBox {
 
@@ -34,6 +35,16 @@ public class StatusBadge extends HBox {
                 this.setStyle(this.getStyle() + "-fx-background-color: #FFE4E6;");
                 label.setStyle(label.getStyle() + "-fx-text-fill: #9F1239;");
                 icon = new SvgIcon(SvgIcon.IconName.X_CIRCLE, 13, Color.web("#E11D48"));
+                break;
+            case "BLOCKED":
+                this.setStyle(this.getStyle() + "-fx-background-color: #FEF3C7;");
+                label.setStyle(label.getStyle() + "-fx-text-fill: #B45309;");
+                icon = new SvgIcon(SvgIcon.IconName.ALERT_TRIANGLE, 13, Color.web("#D97706"));
+                break;
+            case "TIMED_OUT":
+                this.setStyle(this.getStyle() + "-fx-background-color: #FEE2E2;");
+                label.setStyle(label.getStyle() + "-fx-text-fill: #991B1B;");
+                icon = new SvgIcon(SvgIcon.IconName.CLOCK, 13, Color.web("#DC2626"));
                 break;
             case "RUNNING":
                 this.setStyle(this.getStyle() + "-fx-background-color: #FEF3C7;");

@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS executions (
 CREATE TABLE IF NOT EXISTS stage_executions (
     id VARCHAR(100) PRIMARY KEY,
     execution_id VARCHAR(100) NOT NULL,
-    stage_id VARCHAR(100) NOT NULL,
+    stage_id VARCHAR(100) DEFAULT NULL,
     stage_name VARCHAR(100) NOT NULL,
     stage_type VARCHAR(50) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS stage_executions (
     duration_seconds DOUBLE DEFAULT 0.0,
     error_message TEXT,
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
-    FOREIGN KEY (stage_id) REFERENCES pipeline_stages(id) ON DELETE CASCADE,
+    FOREIGN KEY (stage_id) REFERENCES pipeline_stages(id) ON DELETE SET NULL,
     INDEX idx_stage_exec_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -18,8 +18,9 @@ import javafx.scene.paint.Color;
 import java.util.List;
 
 /**
- * Dashboard View matching Presentation Slide 9 specifications.
- * Displays live KPI metrics, recent executions, and recent project status.
+ * Operational Dashboard View matching visual reference specification:
+ * Header action bar, KPI metrics cards, 3 Team/Pipeline status cards with traffic lights,
+ * real execution audit table, and active projects overview.
  */
 public class DashboardView extends VBox {
 
@@ -34,6 +35,11 @@ public class DashboardView extends VBox {
     private MetricCard successBuildsCard;
     private MetricCard failedBuildsCard;
 
+    // Team Operational Cards matching reference
+    private VBox buildTeamCard;
+    private VBox qaTeamCard;
+    private VBox opsTeamCard;
+
     private TableView<Execution> recentExecutionsTable;
     private TableView<Project> recentProjectsTable;
 
@@ -42,36 +48,73 @@ public class DashboardView extends VBox {
         this.dashboardService = dashboardService;
         this.executionEngine = executionEngine;
 
-        this.setSpacing(24);
+        this.setSpacing(20);
         this.setPadding(new Insets(24));
         this.setStyle("-fx-background-color: transparent;");
 
+        buildHeaderActionBar();
         buildKpiSection();
+        buildTeamOperationalSection();
         buildContentGrids();
         refreshData();
+    }
+
+    private void buildHeaderActionBar() {
+        HBox topBar = new HBox(12);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox titleBox = new VBox(2);
+        Label subtitle = new Label("Operational truth:");
+        subtitle.setStyle("-fx-font-size: 11px; -fx-text-fill: #8A8D9E;");
+        Label title = new Label("DevOpsHub Dashboard");
+        title.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        titleBox.getChildren().addAll(subtitle, title);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        String todayDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+        Label datePill = new Label(todayDate);
+        datePill.getStyleClass().add("header-date-badge");
+
+        Button triggerRunBtn = new Button("+ Trigger Run");
+        triggerRunBtn.getStyleClass().add("btn-primary");
+        triggerRunBtn.setOnAction(e -> mainLayout.navigateToExecutions());
+
+        Button newProjBtn = new Button("New Project");
+        newProjBtn.getStyleClass().add("btn-secondary");
+        newProjBtn.setOnAction(e -> mainLayout.navigateToProjects());
+
+        Button refreshBtn = new Button("Refresh");
+        refreshBtn.getStyleClass().add("btn-secondary");
+        refreshBtn.setGraphic(new SvgIcon(SvgIcon.IconName.REFRESH, 13, Color.web("#8A8D9E")));
+        refreshBtn.setOnAction(e -> refreshData());
+
+        topBar.getChildren().addAll(titleBox, spacer, datePill, triggerRunBtn, newProjBtn, refreshBtn);
+        this.getChildren().add(topBar);
     }
 
     private void buildKpiSection() {
         HBox kpiGrid = new HBox(16);
         kpiGrid.setAlignment(Pos.CENTER_LEFT);
 
-        projectsCard = new MetricCard("Projects", "0", "Total active projects",
-                SvgIcon.IconName.PROJECTS, Color.web("#0284C7"));
+        projectsCard = new MetricCard("Projects", "0", "Total active repositories",
+                SvgIcon.IconName.PROJECTS, Color.web("#38BDF8"));
 
-        pipelinesCard = new MetricCard("Pipelines", "0", "Configured delivery pipelines",
-                SvgIcon.IconName.PIPELINES, Color.web("#0D9488"));
+        pipelinesCard = new MetricCard("Pipelines", "0", "Configured delivery flows",
+                SvgIcon.IconName.PIPELINES, Color.web("#8B5CF6"));
 
-        successRateCard = new MetricCard("Success Rate", "0%", "Historical delivery reliability",
+        successRateCard = new MetricCard("Success Rate", "0%", "Historical build reliability",
                 SvgIcon.IconName.CHECK_CIRCLE, Color.web("#10B981"));
 
-        avgDurationCard = new MetricCard("Avg Build", "0s", "Average execution duration",
+        avgDurationCard = new MetricCard("Avg Duration", "0s", "Average execution runtime",
                 SvgIcon.IconName.CLOCK, Color.web("#F59E0B"));
 
         successBuildsCard = new MetricCard("Successful", "0", "Completed passing runs",
-                SvgIcon.IconName.CHECK_CIRCLE, Color.web("#059669"));
+                SvgIcon.IconName.CHECK_CIRCLE, Color.web("#10B981"));
 
         failedBuildsCard = new MetricCard("Failed", "0", "Investigated failure runs",
-                SvgIcon.IconName.X_CIRCLE, Color.web("#E11D48"));
+                SvgIcon.IconName.X_CIRCLE, Color.web("#F43F5E"));
 
         kpiGrid.getChildren().addAll(
                 projectsCard, pipelinesCard, successRateCard,
@@ -79,6 +122,130 @@ public class DashboardView extends VBox {
         );
 
         this.getChildren().add(kpiGrid);
+    }
+
+    private HBox teamRow;
+
+    /**
+     * Team Operational Cards matching visual reference:
+     * Calculated dynamically from stage execution telemetry (Build, QA, Deployment).
+     */
+    private void buildTeamOperationalSection() {
+        teamRow = new HBox(16);
+        teamRow.setAlignment(Pos.CENTER_LEFT);
+        updateTeamCards();
+        this.getChildren().add(teamRow);
+    }
+
+    private void updateTeamCards() {
+        if (teamRow == null) return;
+        teamRow.getChildren().clear();
+
+        var buildStats = dashboardService.getBuildStageStats();
+        var testStats = dashboardService.getTestStageStats();
+        var deployStats = dashboardService.getDeployStageStats();
+
+        buildTeamCard = createTeamCard("Build & Compile Operations",
+                buildStats.getFailedRuns() + " issues",
+                buildStats.getRunningRuns() + " running",
+                (buildStats.getTotalRuns() - buildStats.getFailedRuns()) + " completed",
+                String.format("%.1fs runtime", buildStats.getTotalDurationSeconds()),
+                buildStats.getTotalRuns() + " stages",
+                buildStats.getTotalRuns() == 0 ? "Ready" : (buildStats.getFailedRuns() == 0 ? "100% Reliable" : "Needs Review"));
+
+        qaTeamCard = createTeamCard("Test & Quality Assurance",
+                testStats.getFailedRuns() + " failed",
+                testStats.getRunningRuns() + " active",
+                (testStats.getTotalRuns() - testStats.getFailedRuns()) + " passing",
+                String.format("%.1fs runtime", testStats.getTotalDurationSeconds()),
+                testStats.getTotalRuns() + " suites",
+                testStats.getTotalRuns() == 0 ? "Ready" : (testStats.getFailedRuns() == 0 ? "Passing" : "Failing"));
+
+        opsTeamCard = createTeamCard("Packaging & Deployment Ops",
+                deployStats.getFailedRuns() + " errors",
+                deployStats.getRunningRuns() + " pending",
+                (deployStats.getTotalRuns() - deployStats.getFailedRuns()) + " releases",
+                String.format("%.1fs runtime", deployStats.getTotalDurationSeconds()),
+                deployStats.getTotalRuns() + " targets",
+                deployStats.getTotalRuns() == 0 ? "Ready" : "Verified");
+
+        HBox.setHgrow(buildTeamCard, Priority.ALWAYS);
+        HBox.setHgrow(qaTeamCard, Priority.ALWAYS);
+        HBox.setHgrow(opsTeamCard, Priority.ALWAYS);
+
+        teamRow.getChildren().addAll(buildTeamCard, qaTeamCard, opsTeamCard);
+    }
+
+    private VBox createTeamCard(String title, String redText, String amberText, String greenText,
+                                String stat1, String stat2, String stat3) {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("card");
+        card.setStyle("-fx-background-color: #181926; -fx-border-color: #26283C; -fx-padding: 14px;");
+
+        HBox header = new HBox(8);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        Label titleLabel = new Label(title);
+        titleLabel.setStyle("-fx-font-size: 13px; -fx-font-weight: 700; -fx-text-fill: #FFFFFF;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox avatars = createMiniAvatarCluster();
+        header.getChildren().addAll(titleLabel, spacer, avatars);
+
+        VBox statusBox = new VBox(5);
+        statusBox.getChildren().addAll(
+                createTrafficRow("#F43F5E", redText),
+                createTrafficRow("#F59E0B", amberText),
+                createTrafficRow("#10B981", greenText)
+        );
+
+        HBox footer = new HBox(12);
+        footer.setAlignment(Pos.CENTER_LEFT);
+        footer.setStyle("-fx-padding: 8px 0 0 0; -fx-border-color: #222436; -fx-border-width: 1px 0 0 0;");
+
+        Label s1 = new Label(stat1);
+        s1.setStyle("-fx-font-size: 10px; -fx-text-fill: #8A8D9E;");
+        Label s2 = new Label(stat2);
+        s2.setStyle("-fx-font-size: 10px; -fx-text-fill: #8A8D9E;");
+        Label s3 = new Label(stat3);
+        s3.setStyle("-fx-font-size: 10px; -fx-text-fill: #8A8D9E;");
+
+        footer.getChildren().addAll(s1, s2, s3);
+        card.getChildren().addAll(header, statusBox, footer);
+        return card;
+    }
+
+    private HBox createTrafficRow(String color, String text) {
+        HBox row = new HBox(8);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        Region dot = new Region();
+        dot.setStyle(String.format("-fx-background-color: %s; -fx-background-radius: 4px; -fx-min-width: 8px; -fx-min-height: 8px; -fx-max-width: 8px; -fx-max-height: 8px;", color));
+
+        Label lbl = new Label(text);
+        lbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #A0A5BA;");
+
+        row.getChildren().addAll(dot, lbl);
+        return row;
+    }
+
+    private HBox createMiniAvatarCluster() {
+        HBox cluster = new HBox(-4);
+        cluster.setAlignment(Pos.CENTER_RIGHT);
+
+        String[] colors = {"#38BDF8", "#8B5CF6"};
+        String[] inits = {"NJ", "MP"};
+        for (int i = 0; i < inits.length; i++) {
+            StackPane av = new StackPane();
+            av.setStyle(String.format("-fx-background-color: %s; -fx-min-width: 18px; -fx-min-height: 18px; -fx-max-width: 18px; -fx-max-height: 18px; -fx-background-radius: 9px;", colors[i]));
+            Label l = new Label(inits[i]);
+            l.setStyle("-fx-font-size: 7px; -fx-font-weight: bold; -fx-text-fill: #FFFFFF;");
+            av.getChildren().add(l);
+            cluster.getChildren().add(av);
+        }
+        return cluster;
     }
 
     private void buildContentGrids() {
@@ -95,7 +262,7 @@ public class DashboardView extends VBox {
         HBox execHeader = new HBox();
         execHeader.setAlignment(Pos.CENTER_LEFT);
         Label execTitle = new Label("Recent Executions");
-        execTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        execTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #FFFFFF;");
         Region spacer1 = new Region();
         HBox.setHgrow(spacer1, Priority.ALWAYS);
 
@@ -168,7 +335,7 @@ public class DashboardView extends VBox {
         HBox projHeader = new HBox();
         projHeader.setAlignment(Pos.CENTER_LEFT);
         Label projTitle = new Label("Recent Projects");
-        projTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        projTitle.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #FFFFFF;");
         Region spacer2 = new Region();
         HBox.setHgrow(spacer2, Priority.ALWAYS);
 
@@ -257,5 +424,7 @@ public class DashboardView extends VBox {
 
         List<Project> recentProjs = dashboardService.getRecentProjects();
         recentProjectsTable.getItems().setAll(recentProjs);
+
+        updateTeamCards();
     }
 }

@@ -19,7 +19,8 @@ public class ToastNotification {
     public enum ToastType {
         SUCCESS,
         ERROR,
-        INFO
+        INFO,
+        WARNING
     }
 
     public static void show(StackPane container, String message, ToastType type) {
@@ -40,6 +41,10 @@ public class ToastNotification {
                 break;
             case ERROR:
                 bgStyle = "-fx-background-color: #9F1239; -fx-background-radius: 8px;";
+                icon = new SvgIcon(SvgIcon.IconName.ALERT_TRIANGLE, 16, Color.WHITE);
+                break;
+            case WARNING:
+                bgStyle = "-fx-background-color: #D97706; -fx-background-radius: 8px;";
                 icon = new SvgIcon(SvgIcon.IconName.ALERT_TRIANGLE, 16, Color.WHITE);
                 break;
             default:

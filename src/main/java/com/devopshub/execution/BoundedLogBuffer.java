@@ -14,6 +14,7 @@ import java.util.List;
 public class BoundedLogBuffer {
     private final int capacity;
     private final Deque<ExecutionLog> buffer;
+    private boolean truncatedNoticeAdded = false;
 
     public BoundedLogBuffer(int capacity) {
         this.capacity = capacity > 0 ? capacity : 5000;
@@ -23,6 +24,14 @@ public class BoundedLogBuffer {
     public synchronized void add(ExecutionLog log) {
         if (buffer.size() >= capacity) {
             buffer.pollFirst(); // Drop oldest line
+            if (!truncatedNoticeAdded) {
+                truncatedNoticeAdded = true;
+                ExecutionLog notice = new ExecutionLog();
+                notice.setLogLevel(com.devopshub.model.LogLevel.WARN);
+                notice.setMessage("[LOG BUFFER NOTICE] Log output exceeded in-memory capacity (" + capacity + " lines). Older lines preserved in persistent storage.");
+                notice.setTimestamp(new java.sql.Timestamp(System.currentTimeMillis()));
+                buffer.addFirst(notice);
+            }
         }
         buffer.addLast(log);
     }

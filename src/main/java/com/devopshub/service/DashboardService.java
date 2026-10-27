@@ -32,15 +32,29 @@ public class DashboardService {
     }
 
     public DashboardMetrics getMetrics() {
+        return getMetrics("ALL TIME (LIFETIME)");
+    }
+
+    public DashboardMetrics getMetrics(String timeWindow) {
+        java.sql.Timestamp since = null;
+        if (timeWindow != null) {
+            String w = timeWindow.toUpperCase();
+            if (w.contains("7 DAY") || w.contains("7D")) {
+                since = new java.sql.Timestamp(System.currentTimeMillis() - (7L * 24 * 3600 * 1000));
+            } else if (w.contains("30 DAY") || w.contains("30D")) {
+                since = new java.sql.Timestamp(System.currentTimeMillis() - (30L * 24 * 3600 * 1000));
+            }
+        }
+
         DashboardMetrics metrics = new DashboardMetrics();
 
         int totalProjects = projectRepository.count();
         int totalPipelines = pipelineRepository.count();
-        int totalExecutions = executionRepository.countAll();
-        int successful = executionRepository.countByStatus(ExecutionStatus.SUCCESS);
-        int failed = executionRepository.countByStatus(ExecutionStatus.FAILED);
-        int running = executionRepository.countByStatus(ExecutionStatus.RUNNING);
-        double avgDuration = executionRepository.getAverageDurationSeconds();
+        int totalExecutions = executionRepository.countAll(since);
+        int successful = executionRepository.countByStatus(ExecutionStatus.SUCCESS, since);
+        int failed = executionRepository.countByStatus(ExecutionStatus.FAILED, since);
+        int running = executionRepository.countByStatus(ExecutionStatus.RUNNING, since);
+        double avgDuration = executionRepository.getAverageDurationSeconds(since);
 
         metrics.setTotalProjects(totalProjects);
         metrics.setTotalPipelines(totalPipelines);
@@ -57,6 +71,18 @@ public class DashboardService {
         metrics.setFailureCategoryCounts(diagnosisRepository.countByCategory());
 
         return metrics;
+    }
+
+    public ExecutionRepository.StageOperationalStats getBuildStageStats() {
+        return executionRepository.getStageStats(List.of(com.devopshub.model.StageType.BUILD, com.devopshub.model.StageType.CHECKOUT));
+    }
+
+    public ExecutionRepository.StageOperationalStats getTestStageStats() {
+        return executionRepository.getStageStats(List.of(com.devopshub.model.StageType.TEST, com.devopshub.model.StageType.SECURITY));
+    }
+
+    public ExecutionRepository.StageOperationalStats getDeployStageStats() {
+        return executionRepository.getStageStats(List.of(com.devopshub.model.StageType.PACKAGE, com.devopshub.model.StageType.DEPLOY));
     }
 
     public List<Execution> getRecentExecutions(int limit) {

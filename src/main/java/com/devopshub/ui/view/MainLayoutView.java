@@ -17,6 +17,8 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
@@ -39,16 +41,18 @@ public class MainLayoutView extends BorderPane {
     private final Label pageTitleLabel;
     private final Label pageSubtitleLabel;
     private final HBox headerActionsBox;
+    private final AlertsSidebarView alertsSidebar;
 
     private final Map<String, Button> navButtons = new HashMap<>();
-    private String currentViewName = "dashboard";
+    private String currentViewName = "home";
+    private Node currentViewNode;
 
     public MainLayoutView(Stage primaryStage) {
         this.primaryStage = primaryStage;
         this.projectService = new ProjectService();
         this.pipelineService = new PipelineService();
         this.dashboardService = new DashboardService();
-        this.executionEngine = new ExecutionEngine();
+        this.executionEngine = ExecutionEngine.getInstance();
 
         this.getStyleClass().add("root");
 
@@ -56,63 +60,120 @@ public class MainLayoutView extends BorderPane {
         this.contentStack = new StackPane();
         VBox.setVgrow(contentStack, Priority.ALWAYS);
 
+        // Right Alerts Sidebar matching reference
+        this.alertsSidebar = new AlertsSidebarView(this, dashboardService);
+        this.setRight(alertsSidebar);
+
         // Build Shell Components
         this.setLeft(createSidebar());
 
         VBox centerArea = new VBox();
         VBox.setVgrow(centerArea, Priority.ALWAYS);
 
-        // Header
+        // Header matching reference
         HBox topHeader = new HBox(16);
         topHeader.getStyleClass().add("top-header");
         topHeader.setAlignment(Pos.CENTER_LEFT);
 
         VBox titleBox = new VBox(2);
-        pageTitleLabel = new Label("Dashboard");
+        pageTitleLabel = new Label("Home");
         pageTitleLabel.getStyleClass().add("header-title");
-        pageSubtitleLabel = new Label("Operational truth at a glance");
+        pageSubtitleLabel = new Label("Welcome to DevOpsHub CI/CD Management Platform");
         pageSubtitleLabel.getStyleClass().add("header-subtitle");
         titleBox.getChildren().addAll(pageTitleLabel, pageSubtitleLabel);
+
+        // Reference Header Search Field connected to active view filtering (UI-02)
+        TextField searchInput = new TextField();
+        searchInput.setPromptText("Search workspace...");
+        searchInput.getStyleClass().add("header-search-field");
+        searchInput.setPrefWidth(180);
+        searchInput.setMaxWidth(220);
+        searchInput.textProperty().addListener((obs, oldVal, newVal) -> handleGlobalSearch(newVal));
+        searchInput.setOnAction(e -> handleGlobalSearch(searchInput.getText()));
+
+        // Reference Date Badge
+        Label dateBadge = new Label(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+        dateBadge.getStyleClass().add("header-date-badge");
+        dateBadge.setMinWidth(Region.USE_PREF_SIZE);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        // Header DB Status indicator
+        // Header DB Status indicator (DAT-01)
         boolean isH2 = DatabaseManager.getInstance().isH2Fallback();
+        boolean isMem = DatabaseManager.getInstance().isH2InMemory();
         HBox dbHeaderPill = new HBox(6);
         dbHeaderPill.setAlignment(Pos.CENTER_LEFT);
-        dbHeaderPill.setStyle("-fx-background-color: #F1F5F9; -fx-padding: 4px 10px; -fx-background-radius: 12px; -fx-cursor: hand;");
-        SvgIcon dbDot = new SvgIcon(SvgIcon.IconName.CHECK_CIRCLE, 12, isH2 ? Color.web("#D97706") : Color.web("#10B981"));
-        Label dbStatusText = new Label(isH2 ? "H2 Database" : "MySQL Connected");
-        dbStatusText.setStyle("-fx-font-size: 11px; -fx-font-weight: 600; -fx-text-fill: #334155;");
+        dbHeaderPill.setMinWidth(Region.USE_PREF_SIZE);
+        dbHeaderPill.setStyle("-fx-background-color: #1A1D2B; -fx-padding: 5px 12px; -fx-background-radius: 12px; -fx-border-color: #26293C; -fx-cursor: hand;");
+        SvgIcon dbDot = new SvgIcon(SvgIcon.IconName.CHECK_CIRCLE, 12, isH2 ? (isMem ? Color.web("#F59E0B") : Color.web("#38BDF8")) : Color.web("#10B981"));
+        Label dbStatusText = new Label(isH2 ? (isMem ? "H2 Memory" : "H2 Disk Fallback") : "MySQL Live");
+        dbStatusText.setStyle(String.format("-fx-font-size: 11px; -fx-font-weight: 700; -fx-text-fill: %s;", isH2 ? (isMem ? "#F59E0B" : "#38BDF8") : "#10B981"));
         dbHeaderPill.getChildren().addAll(dbDot, dbStatusText);
         dbHeaderPill.setOnMouseClicked(e -> {
             long ms = DatabaseManager.getInstance().pingLatencyMillis();
-            showToast(String.format("Database active: %s (Ping: %d ms)", isH2 ? "H2" : "MySQL 8.0", ms), ToastNotification.ToastType.INFO);
+            showToast(String.format("Active Database: %s (Latency: %d ms)", DatabaseManager.getInstance().getDatabaseType(), ms), ToastNotification.ToastType.INFO);
+        });
+
+        // Bell Icon Toggle for Alerts Panel
+        Button toggleAlertsBtn = new Button();
+        toggleAlertsBtn.getStyleClass().add("btn-secondary");
+        toggleAlertsBtn.setGraphic(new SvgIcon(SvgIcon.IconName.BELL, 13, Color.web("#8A8D9E")));
+        toggleAlertsBtn.setTooltip(new Tooltip("Toggle Alerts & Activity Panel"));
+        toggleAlertsBtn.setOnAction(e -> {
+            if (this.getRight() != null) {
+                this.setRight(null);
+            } else {
+                this.setRight(alertsSidebar);
+            }
         });
 
         headerActionsBox = new HBox(10);
         headerActionsBox.setAlignment(Pos.CENTER_RIGHT);
 
-        topHeader.getChildren().addAll(titleBox, spacer, dbHeaderPill, headerActionsBox);
+        topHeader.getChildren().addAll(titleBox, searchInput, dateBadge, spacer, dbHeaderPill, toggleAlertsBtn, headerActionsBox);
         centerArea.getChildren().addAll(topHeader, contentStack);
 
         this.setCenter(centerArea);
 
-        // Initial View
-        navigateToDashboard();
+        // Genuine Responsive Layout Adaptation
+        this.widthProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal.doubleValue() < 1100.0) {
+                if (this.getRight() != null) {
+                    this.setRight(null);
+                }
+            } else {
+                if (this.getRight() == null) {
+                    this.setRight(alertsSidebar);
+                }
+            }
+        });
+
+        // Initial Startup View: Home Screen (as mandated by prompt)
+        navigateToHome();
     }
 
     private Node createSidebar() {
-        VBox sidebar = new VBox(8);
+        VBox sidebar = new VBox(6);
         sidebar.getStyleClass().add("sidebar");
+
+        // macOS Window Control Circles (Red, Yellow, Green)
+        HBox macLights = new HBox(7);
+        macLights.getStyleClass().add("mac-traffic-lights");
+        Region dotRed = new Region();
+        dotRed.getStyleClass().add("mac-dot-red");
+        Region dotYellow = new Region();
+        dotYellow.getStyleClass().add("mac-dot-yellow");
+        Region dotGreen = new Region();
+        dotGreen.getStyleClass().add("mac-dot-green");
+        macLights.getChildren().addAll(dotRed, dotYellow, dotGreen);
 
         // Brand Logo Area
         HBox brandBox = new HBox(10);
         brandBox.setAlignment(Pos.CENTER_LEFT);
-        brandBox.setPadding(new Insets(4, 8, 16, 8));
+        brandBox.setPadding(new Insets(2, 6, 14, 6));
 
-        SvgIcon brandIcon = new SvgIcon(SvgIcon.IconName.CPU, 22, Color.web("#0284C7"));
+        SvgIcon brandIcon = new SvgIcon(SvgIcon.IconName.CPU, 22, Color.web("#38BDF8"));
         VBox brandTextBox = new VBox(2);
         Label brandTitle = new Label("DEVOPSHUB");
         brandTitle.getStyleClass().add("sidebar-brand-title");
@@ -123,11 +184,13 @@ public class MainLayoutView extends BorderPane {
         brandBox.getChildren().addAll(brandIcon, brandTextBox);
 
         // Nav Section Label
-        Label navTitle = new Label("PLATFORM");
+        Label navTitle = new Label("NAVIGATION");
         navTitle.getStyleClass().add("nav-section-title");
 
-        // Nav Buttons
+        // Nav Buttons (Home, Dashboard, Map (Builder), Projects, Pipelines, Executions, Logs, Analytics, Settings)
+        Button homeBtn = createNavButton("Home", SvgIcon.IconName.HOME, this::navigateToHome);
         Button dashBtn = createNavButton("Dashboard", SvgIcon.IconName.DASHBOARD, this::navigateToDashboard);
+        Button mapBtn = createNavButton("Map (Builder)", SvgIcon.IconName.MAP, () -> navigateToPipelineBuilder(null));
         Button projBtn = createNavButton("Projects", SvgIcon.IconName.PROJECTS, this::navigateToProjects);
         Button pipeBtn = createNavButton("Pipelines", SvgIcon.IconName.PIPELINES, this::navigateToPipelines);
         Button execBtn = createNavButton("Executions", SvgIcon.IconName.EXECUTIONS, this::navigateToExecutions);
@@ -135,7 +198,9 @@ public class MainLayoutView extends BorderPane {
         Button analyticsBtn = createNavButton("Analytics", SvgIcon.IconName.ANALYTICS, this::navigateToAnalytics);
         Button settingsBtn = createNavButton("Settings", SvgIcon.IconName.SETTINGS, this::navigateToSettings);
 
+        navButtons.put("home", homeBtn);
         navButtons.put("dashboard", dashBtn);
+        navButtons.put("builder", mapBtn);
         navButtons.put("projects", projBtn);
         navButtons.put("pipelines", pipeBtn);
         navButtons.put("executions", execBtn);
@@ -149,19 +214,32 @@ public class MainLayoutView extends BorderPane {
         // Database status indicator in sidebar footer
         HBox dbStatusBox = new HBox(8);
         dbStatusBox.setAlignment(Pos.CENTER_LEFT);
-        dbStatusBox.setPadding(new Insets(12, 10, 8, 10));
-        dbStatusBox.setStyle("-fx-background-color: #1E293B; -fx-background-radius: 6px;");
+        dbStatusBox.setPadding(new Insets(10, 10, 8, 10));
+        dbStatusBox.setStyle("-fx-background-color: #1A1C29; -fx-background-radius: 6px; -fx-border-color: #27283B;");
 
         boolean isH2 = DatabaseManager.getInstance().isH2Fallback();
-        SvgIcon dbIcon = new SvgIcon(SvgIcon.IconName.DATABASE, 14, isH2 ? Color.web("#F59E0B") : Color.web("#10B981"));
-        Label dbLabel = new Label(isH2 ? "H2 Memory Mode" : "MySQL Connected");
+        boolean isMem = DatabaseManager.getInstance().isH2InMemory();
+        SvgIcon dbIcon = new SvgIcon(SvgIcon.IconName.DATABASE, 14, isH2 ? (isMem ? Color.web("#F59E0B") : Color.web("#38BDF8")) : Color.web("#10B981"));
+        String dbLabelText = isH2 ? (isMem ? "H2 Memory (Ephemeral)" : "H2 Fallback (Disk)") : "MySQL 8.0 Live";
+        Label dbLabel = new Label(dbLabelText);
         dbLabel.setStyle(String.format("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: %s;",
-                isH2 ? "#FBBF24" : "#34D399"));
+                isH2 ? (isMem ? "#FBBF24" : "#38BDF8") : "#34D399"));
         dbStatusBox.getChildren().addAll(dbIcon, dbLabel);
+        dbStatusBox.setCursor(javafx.scene.Cursor.HAND);
+        String tooltipText;
+        if (!isH2) {
+            tooltipText = "Connected to live MySQL 8.0 server (localhost:3306). Authoritative persistent storage active. Click to check settings.";
+        } else if (isMem) {
+            tooltipText = "Warning: Running in ephemeral in-memory H2 fallback mode. Data will NOT persist after application restart. Click to check settings.";
+        } else {
+            tooltipText = "Primary MySQL unreachable. Running in durable disk-backed H2 fallback mode (./data/devopshub). Data persists across restarts. Click to check settings.";
+        }
+        Tooltip.install(dbStatusBox, new Tooltip(tooltipText));
+        dbStatusBox.setOnMouseClicked(e -> navigateToSettings());
 
         sidebar.getChildren().addAll(
-                brandBox, navTitle,
-                dashBtn, projBtn, pipeBtn, execBtn, logBtn, analyticsBtn, settingsBtn,
+                macLights, brandBox, navTitle,
+                homeBtn, dashBtn, projBtn, pipeBtn, mapBtn, execBtn, logBtn, analyticsBtn, settingsBtn,
                 spacer, dbStatusBox
         );
 
@@ -193,7 +271,11 @@ public class MainLayoutView extends BorderPane {
     }
 
     public void setView(String viewName, String title, String subtitle, Node viewNode, Node... actionButtons) {
+        if (this.currentViewNode instanceof ExecutionDetailView edv) {
+            edv.dispose();
+        }
         setActiveNav(viewName);
+        this.currentViewNode = viewNode;
         pageTitleLabel.setText(title);
         pageSubtitleLabel.setText(subtitle);
 
@@ -204,9 +286,29 @@ public class MainLayoutView extends BorderPane {
 
         ScrollPane scroll = new ScrollPane(viewNode);
         scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
 
         contentStack.getChildren().setAll(scroll);
+    }
+
+    public void handleGlobalSearch(String query) {
+        String q = query != null ? query.trim() : "";
+        if (currentViewNode instanceof ProjectsView pv) {
+            pv.setSearchQuery(q);
+        } else if (currentViewNode instanceof PipelinesView plv) {
+            plv.setSearchQuery(q);
+        } else if (currentViewNode instanceof ExecutionHistoryView ehv) {
+            ehv.setSearchQuery(q);
+        } else if (currentViewNode instanceof LogViewerView lvv) {
+            lvv.setSearchQuery(q);
+        } else if (!q.isEmpty()) {
+            navigateToPipelines();
+            if (currentViewNode instanceof PipelinesView plv) {
+                plv.setSearchQuery(q);
+            }
+        }
     }
 
     public void showToast(String message, ToastNotification.ToastType type) {
@@ -214,6 +316,15 @@ public class MainLayoutView extends BorderPane {
     }
 
     // Navigation Methods
+    public void navigateToHome() {
+        setView("home", "Home", "Welcome to DevOpsHub CI/CD Management Platform",
+                new HomeView(this, projectService, dashboardService));
+    }
+
+    public AlertsSidebarView getAlertsSidebar() {
+        return alertsSidebar;
+    }
+
     public void navigateToDashboard() {
         setView("dashboard", "Dashboard", "Operational truth at a glance",
                 new DashboardView(this, dashboardService, executionEngine));
@@ -243,7 +354,7 @@ public class MainLayoutView extends BorderPane {
 
     public void navigateToPipelineBuilder(Pipeline existingPipeline) {
         String title = existingPipeline == null ? "Create Pipeline" : "Configure Pipeline";
-        setView("pipelines", title, "Visual stage builder and dependency configuration",
+        setView("builder", title, "Visual stage builder and dependency configuration",
                 new PipelineBuilderView(this, pipelineService, projectService, existingPipeline));
     }
 

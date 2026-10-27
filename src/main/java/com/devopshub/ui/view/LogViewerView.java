@@ -53,46 +53,49 @@ public class LogViewerView extends VBox {
     }
 
     private void buildToolbar() {
-        HBox toolbar = new HBox(12);
-        toolbar.setAlignment(Pos.CENTER_LEFT);
+        VBox toolbarContainer = new VBox(10);
+        toolbarContainer.setStyle("-fx-background-color: #141622; -fx-padding: 12px 16px; -fx-background-radius: 8px; -fx-border-color: #222436;");
+
+        // Row 1: Target execution selector, stage filter, log level, auto-scroll, and export actions
+        HBox row1 = new HBox(12);
+        row1.setAlignment(Pos.CENTER_LEFT);
 
         Label execLabel = new Label("Execution Run:");
-        execLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        execLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        execLabel.setMinWidth(Region.USE_PREF_SIZE);
 
         executionCombo = new ComboBox<>();
         executionCombo.setPrefWidth(220);
+        executionCombo.setMinWidth(180);
         executionCombo.setOnAction(e -> {
             updateStageFilterItems();
             reloadLogs();
         });
 
         Label stageLabel = new Label("Stage:");
-        stageLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        stageLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        stageLabel.setMinWidth(Region.USE_PREF_SIZE);
 
         stageFilter = new ComboBox<>();
         stageFilter.setPrefWidth(160);
+        stageFilter.setMinWidth(140);
         stageFilter.getItems().add("ALL STAGES");
         stageFilter.setValue("ALL STAGES");
         stageFilter.setOnAction(e -> reloadLogs());
 
-        Label searchLabel = new Label("Search:");
-        searchLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
-
-        searchField = new TextField();
-        searchField.setPromptText("Filter keywords (e.g. 401, error)...");
-        searchField.setPrefWidth(200);
-        searchField.textProperty().addListener((o, old, val) -> reloadLogs());
-
         Label levelLabel = new Label("Level:");
-        levelLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        levelLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        levelLabel.setMinWidth(Region.USE_PREF_SIZE);
 
         levelFilter = new ComboBox<>();
         levelFilter.getItems().addAll("ALL", "INFO", "ERROR", "WARN");
         levelFilter.setValue("ALL");
+        levelFilter.setMinWidth(90);
         levelFilter.setOnAction(e -> reloadLogs());
 
         autoScrollCheck = new CheckBox("Auto-scroll");
         autoScrollCheck.setSelected(true);
+        autoScrollCheck.setMinWidth(Region.USE_PREF_SIZE);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -100,6 +103,7 @@ public class LogViewerView extends VBox {
         Button copyBtn = new Button("Copy");
         copyBtn.getStyleClass().add("btn-secondary");
         copyBtn.setGraphic(new SvgIcon(SvgIcon.IconName.COPY, 12, Color.web("#64748B")));
+        copyBtn.setMinWidth(Region.USE_PREF_SIZE);
         copyBtn.setOnAction(e -> {
             javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
             javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
@@ -111,17 +115,34 @@ public class LogViewerView extends VBox {
         Button exportBtn = new Button("Export .log");
         exportBtn.getStyleClass().add("btn-secondary");
         exportBtn.setGraphic(new SvgIcon(SvgIcon.IconName.TERMINAL, 12, Color.web("#0284C7")));
+        exportBtn.setMinWidth(Region.USE_PREF_SIZE);
         exportBtn.setOnAction(e -> exportLogsToFile());
 
-        toolbar.getChildren().addAll(
+        row1.getChildren().addAll(
                 execLabel, executionCombo,
                 stageLabel, stageFilter,
-                searchLabel, searchField,
                 levelLabel, levelFilter,
                 autoScrollCheck,
                 spacer, copyBtn, exportBtn
         );
-        this.getChildren().add(toolbar);
+
+        // Row 2: Full-width keyword search bar
+        HBox row2 = new HBox(12);
+        row2.setAlignment(Pos.CENTER_LEFT);
+
+        Label searchLabel = new Label("Search Filter:");
+        searchLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        searchLabel.setMinWidth(Region.USE_PREF_SIZE);
+
+        searchField = new TextField();
+        searchField.setPromptText("Filter keywords across standard output and standard error (e.g. 401, error, BUILD FAILURE)...");
+        HBox.setHgrow(searchField, Priority.ALWAYS);
+        searchField.textProperty().addListener((o, old, val) -> reloadLogs());
+
+        row2.getChildren().addAll(searchLabel, searchField);
+
+        toolbarContainer.getChildren().addAll(row1, row2);
+        this.getChildren().add(toolbarContainer);
     }
 
     private void buildLogConsole() {
@@ -233,6 +254,12 @@ public class LogViewerView extends VBox {
             } catch (IOException ex) {
                 mainLayout.showToast("Failed to export logs: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
             }
+        }
+    }
+
+    public void setSearchQuery(String query) {
+        if (searchField != null) {
+            searchField.setText(query != null ? query : "");
         }
     }
 }

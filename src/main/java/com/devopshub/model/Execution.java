@@ -17,9 +17,15 @@ public class Execution {
     private double durationSeconds;
     private Timestamp createdAt;
 
-    // Associated UI metadata
+    // Associated UI metadata and verified build evidence
     private String pipelineName;
     private String projectName;
+    private String projectType;
+    private String projectRepositoryUrl;
+    private String commitHash;
+    private String artifactPath;
+    private String currentPhase;
+    private String backendDescription;
     private List<StageExecution> stageExecutions = new ArrayList<>();
     private FailureDiagnosis failureDiagnosis;
 
@@ -55,7 +61,13 @@ public class Execution {
     public void setExecutionNumber(int executionNumber) { this.executionNumber = executionNumber; }
 
     public ExecutionStatus getStatus() { return status; }
-    public void setStatus(ExecutionStatus status) { this.status = status; }
+    public void setStatus(ExecutionStatus status) {
+        if (status == null) return;
+        if (this.status != null && this.status.isTerminal() && !status.isTerminal()) {
+            return;
+        }
+        this.status = status;
+    }
 
     public TriggerType getTriggerType() { return triggerType; }
     public void setTriggerType(TriggerType triggerType) { this.triggerType = triggerType; }
@@ -83,6 +95,39 @@ public class Execution {
 
     public FailureDiagnosis getFailureDiagnosis() { return failureDiagnosis; }
     public void setFailureDiagnosis(FailureDiagnosis failureDiagnosis) { this.failureDiagnosis = failureDiagnosis; }
+
+    public String getProjectType() { return projectType; }
+    public void setProjectType(String projectType) { this.projectType = projectType; }
+
+    public String getProjectRepositoryUrl() { return projectRepositoryUrl; }
+    public void setProjectRepositoryUrl(String projectRepositoryUrl) { this.projectRepositoryUrl = projectRepositoryUrl; }
+
+    public String getCommitHash() { return commitHash; }
+    public void setCommitHash(String commitHash) { this.commitHash = commitHash; }
+
+    public String getArtifactPath() { return artifactPath; }
+    public void setArtifactPath(String artifactPath) { this.artifactPath = artifactPath; }
+
+    public String getCurrentPhase() { return currentPhase; }
+    public void setCurrentPhase(String currentPhase) { this.currentPhase = currentPhase; }
+
+    public String getBackendDescription() { return backendDescription; }
+    public void setBackendDescription(String backendDescription) { this.backendDescription = backendDescription; }
+
+    public int getCompletedStageCount() {
+        if (stageExecutions == null) return 0;
+        int count = 0;
+        for (StageExecution se : stageExecutions) {
+            if (se.getStatus() == StageExecutionStatus.SUCCESS) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int getTotalStageCount() {
+        return stageExecutions != null ? stageExecutions.size() : 0;
+    }
 
     @Override
     public String toString() {

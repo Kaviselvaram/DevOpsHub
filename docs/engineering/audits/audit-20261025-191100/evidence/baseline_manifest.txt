@@ -1,0 +1,88 @@
+=== DATE & HOST ===
+Sun Oct 25 19:11:13 IST 2026
+Kaviselvarams-MacBook-Air.local
+Darwin Kaviselvarams-MacBook-Air.local 25.6.0 Darwin Kernel Version 25.6.0: Fri Jul 31 19:18:29 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T8122 arm64
+=== GIT INFO ===
+da9301275fbe82414ec53cef9bd0706ed8458d93
+main
+ M .gitignore
+ M database/migrations/V1__initial_schema.sql
+ M pom.xml
+ M src/main/java/com/devopshub/app/MainApp.java
+ M src/main/java/com/devopshub/config/AppConfig.java
+ M src/main/java/com/devopshub/config/DatabaseManager.java
+ M src/main/java/com/devopshub/exception/DevOpsHubException.java
+ M src/main/java/com/devopshub/execution/ExecutionEngine.java
+ M src/main/java/com/devopshub/execution/LogCollector.java
+ M src/main/java/com/devopshub/execution/ParallelStageCoordinator.java
+ M src/main/java/com/devopshub/execution/ProcessExecutor.java
+ M src/main/java/com/devopshub/execution/StageRunner.java
+ M src/main/java/com/devopshub/model/Execution.java
+ M src/main/java/com/devopshub/model/Stage.java
+ M src/main/java/com/devopshub/model/StageExecution.java
+ M src/main/java/com/devopshub/pipeline/PipelineValidator.java
+ M src/main/java/com/devopshub/repository/ExecutionRepository.java
+ M src/main/java/com/devopshub/repository/PipelineRepository.java
+ M src/main/java/com/devopshub/service/DashboardService.java
+ M src/main/java/com/devopshub/service/PipelineService.java
+ M src/main/java/com/devopshub/ui/component/ConfirmationDialog.java
+ M src/main/java/com/devopshub/ui/component/SvgIcon.java
+ M src/main/java/com/devopshub/ui/component/ToastNotification.java
+ M src/main/java/com/devopshub/ui/view/AnalyticsView.java
+ M src/main/java/com/devopshub/ui/view/DashboardView.java
+ M src/main/java/com/devopshub/ui/view/ExecutionDetailView.java
+ M src/main/java/com/devopshub/ui/view/ExecutionHistoryView.java
+ M src/main/java/com/devopshub/ui/view/LogViewerView.java
+ M src/main/java/com/devopshub/ui/view/MainLayoutView.java
+ M src/main/java/com/devopshub/ui/view/PipelineBuilderView.java
+ M src/main/java/com/devopshub/ui/view/PipelineDetailView.java
+ M src/main/java/com/devopshub/ui/view/PipelinesView.java
+ M src/main/java/com/devopshub/ui/view/ProjectDetailView.java
+ M src/main/java/com/devopshub/ui/view/ProjectsView.java
+ M src/main/java/com/devopshub/ui/view/SettingsView.java
+ M src/main/resources/css/devopshub.css
+ M src/main/resources/db/migrations/V1__initial_schema.sql
+ M src/test/java/com/devopshub/execution/ExecutionEngineTest.java
+ M src/test/java/com/devopshub/repository/DatabaseIntegrationTest.java
+?? DevOpsHub_UI_Interfaces_Catalog.pdf
+?? IMPLEMENTATION_AUDIT.md
+?? IMPLEMENTATION_STATUS.md
+?? database/migrations/V3__reference_seed_projects.sql
+?? docs/BASELINE_AND_INVENTORY.md
+?? docs/DevOpsHub_UI_Interfaces_Catalog.pdf
+?? docs/UI_REFERENCE_SPEC.md
+?? docs/audit/
+?? docs/engineering/
+?? scripts/generate_ui_pdf.py
+?? src/main/java/com/devopshub/deployment/
+?? src/main/java/com/devopshub/git/
+?? src/main/java/com/devopshub/scheduler/
+?? src/main/java/com/devopshub/service/ProjectImportService.java
+?? src/main/java/com/devopshub/ui/view/AlertsSidebarView.java
+?? src/main/java/com/devopshub/ui/view/HomeView.java
+?? src/main/java/com/devopshub/util/
+?? src/main/java/com/devopshub/webhook/
+?? src/main/resources/db/migrations/V3__reference_seed_projects.sql
+?? src/test/java/com/devopshub/deployment/
+?? src/test/java/com/devopshub/execution/EndToEndWorkflowIntegrationTest.java
+?? src/test/java/com/devopshub/execution/LifecycleEndToEndAuditTest.java
+?? src/test/java/com/devopshub/execution/RealLairIntegrationTest.java
+?? src/test/java/com/devopshub/git/
+?? src/test/java/com/devopshub/repository/IndependentPersistenceAuditTest.java
+?? src/test/java/com/devopshub/scheduler/
+?? src/test/java/com/devopshub/service/ProjectImportServiceTest.java
+?? src/test/java/com/devopshub/ui/
+?? src/test/java/com/devopshub/util/
+?? src/test/java/com/devopshub/webhook/
+=== TOOL VERSIONS ===
+Java: java version "25.0.1" 2025-10-21 LTS
+Java(TM) SE Runtime Environment (build 25.0.1+8-LTS-27)
+Maven: WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.fusesource.hawtjni.runtime.Library in an unnamed module (file:/Users/kaviselvaramkathirvel/.m2/wrapper/dists/apache-maven-3.6.3-bin/1iopthnavndlasol9gbrbg6bf2/apache-maven-3.6.3/lib/jansi-1.17.1.jar)
+Git: git version 2.50.1 (Apple Git-155)
+Node: v24.15.0
+npm: 11.12.1
+Docker: Docker version 29.6.1, build 8900f1d
+=== MYSQL CONNECTIVITY ===
+zsh:18: command not found: mysql
+MySQL connection failed or mysql CLI not in path

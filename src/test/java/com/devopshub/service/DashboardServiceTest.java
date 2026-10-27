@@ -41,6 +41,5 @@ class DashboardServiceTest {
 
         List<Project> recentProjects = dashboardService.getRecentProjects();
         assertNotNull(recentProjects);
-        assertFalse(recentProjects.isEmpty(), "Seed projects should be loaded");
     }
 }

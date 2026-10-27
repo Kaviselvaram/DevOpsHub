@@ -42,10 +42,12 @@ Create Project ➔ Configure Pipeline ➔ Validate Pipeline ➔ Execute Pipeline
 - **Core Language:** Java (JDK 21 / 25 LTS)
 - **Styling:** Native JavaFX CSS (`src/main/resources/css/devopshub.css`)
 - **Build System:** Apache Maven 3.6+
-- **Database:** MySQL 8.0 (with in-memory H2 fallback for isolated tests)
-- **Database Connectivity:** JDBC with `com.mysql:mysql-connector-j` and `HikariCP` connection pooling
+- **Database:** MySQL 8.0 (with durable, disk-backed embedded H2 fallback in `./data/devopshub`)
+- **Database Connectivity:** JDBC with `com.mysql:mysql-connector-j`, embedded H2, and `HikariCP` connection pooling
+- **Security & Isolation:** Environment variable sanitization, strict workspace confinement, Git ceiling controls, and fail-closed policies for untrusted workloads
+- **Webhook Security:** Cryptographic HMAC-SHA256 signature verification (`X-Hub-Signature-256`), replay window defense, and nonce deduplication
 - **Testing:** JUnit 5 (`junit-jupiter:5.10.2`)
-- **Logging:** SLF4J 2.0 with Logback Classic
+- **Logging:** SLF4J 2.0 with Logback Classic and memory-bounded circular buffers
 - **Icons:** 100% Scalable Vector Graphics (`SVGPath`)
 
 ---
@@ -55,25 +57,34 @@ Create Project ➔ Configure Pipeline ➔ Validate Pipeline ➔ Execute Pipeline
 ### Prerequisites
 1. **JDK 21 or later** (`java -version` and `javac -version`)
 2. **Apache Maven 3.6+** (`mvn -version`)
-3. **Docker or MySQL 8.0** running on `localhost:3306`
+3. **Docker or MySQL 8.0** running on `localhost:3306` (Optional: DevOpsHub automatically falls back to persistent disk-backed H2 if MySQL is unavailable)
 
-### 1. Start MySQL Server
+### 1. Database Setup (Optional)
 ```bash
 ./scripts/start_mysql.sh
 ```
-*(Or run `docker run -d --name devopshub-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=devopshub mysql:8.0`)*
+*(If MySQL is not started, DevOpsHub automatically initializes a durable embedded H2 database at `./data/devopshub`.)*
 
 ### 2. Run the JavaFX Application
+**Option A: Direct Development Mode (Maven JavaFX Plugin)**
 ```bash
 ./scripts/run_app.sh
+# Or directly:
+mvn javafx:run
 ```
-*(Or launch via Maven directly: `mvn javafx:run`)*
 
-### 3. Run Automated Tests
+**Option B: Packaged Executable JAR (With Bundled Dependencies)**
+```bash
+mvn clean package -DskipTests
+java -jar target/devopshub-desktop-1.0.0.jar
+```
+
+### 3. Run Automated Tests (Authorized Verification Phase)
 ```bash
 ./scripts/run_tests.sh
+# Or directly:
+mvn test
 ```
-*(Or execute: `mvn test`)*
 
 ---
 

@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 
 /**
  * Collects, formats, buffers, and persists stdout/stderr log output.
+ * Guarantees that logs are never lost due to buffering during early aborts or fatal errors.
  */
 public class LogCollector {
     private static final Logger logger = LoggerFactory.getLogger(LogCollector.class);
@@ -26,6 +27,10 @@ public class LogCollector {
     private final BoundedLogBuffer buffer;
     private final List<Consumer<ExecutionLog>> listeners = new CopyOnWriteArrayList<>();
     private final List<ExecutionLog> pendingBatch = new ArrayList<>();
+
+    public LogCollector() {
+        this("in-memory-" + System.currentTimeMillis(), null);
+    }
 
     public LogCollector(String executionId, LogRepository logRepository) {
         this.executionId = executionId;
@@ -44,8 +49,9 @@ public class LogCollector {
     }
 
     public synchronized void append(String stageExecutionId, String stageName, LogLevel level, LogStream stream, String rawLine) {
+        String maskedLine = com.devopshub.util.SecretMasker.mask(rawLine);
         String timestampStr = TIME_FMT.format(new java.util.Date());
-        String formattedMessage = String.format("[%s] %s", timestampStr, rawLine);
+        String formattedMessage = String.format("[%s] %s", timestampStr, maskedLine);
 
         ExecutionLog log = new ExecutionLog();
         log.setExecutionId(executionId);
@@ -68,18 +74,20 @@ public class LogCollector {
             }
         }
 
-        // Flush batch every 50 lines
-        if (pendingBatch.size() >= 50) {
+        // Proactively flush errors, warnings, or when batch reaches threshold
+        if (level == LogLevel.ERROR || level == LogLevel.WARN || pendingBatch.size() >= 15) {
             flush();
         }
     }
 
     public synchronized void flush() {
         if (!pendingBatch.isEmpty()) {
-            try {
-                logRepository.saveBatch(new ArrayList<>(pendingBatch));
-            } catch (Exception e) {
-                logger.error("Failed to flush log batch to database: {}", e.getMessage());
+            if (logRepository != null) {
+                try {
+                    logRepository.saveBatch(new ArrayList<>(pendingBatch));
+                } catch (Exception e) {
+                    logger.error("Failed to flush log batch to database: {}", e.getMessage());
+                }
             }
             pendingBatch.clear();
         }

@@ -2,6 +2,7 @@ package com.devopshub.repository;
 
 import com.devopshub.config.DatabaseManager;
 import com.devopshub.model.*;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,23 @@ class DatabaseIntegrationTest {
         executionRepository = new ExecutionRepository(dbManager);
         logRepository = new LogRepository(dbManager);
         diagnosisRepository = new DiagnosisRepository(dbManager);
+
+        if (projectRepository.findById("proj-001").isEmpty()) {
+            Project p = new Project("proj-001", "Integration Fixture Project", "Desc", "https://github.com/example/test.git", "main", "Java", "ACTIVE");
+            projectRepository.save(p);
+        }
+        if (pipelineRepository.findById("pipe-001").isEmpty()) {
+            Pipeline pipe = new Pipeline("pipe-001", "proj-001", "Integration Fixture Pipeline", "Desc", "SEQUENTIAL", true);
+            pipelineRepository.save(pipe);
+        }
+    }
+
+    @AfterAll
+    static void cleanup() {
+        try {
+            pipelineRepository.delete("pipe-001");
+            projectRepository.delete("proj-001");
+        } catch (Exception ignored) {}
     }
 
     @Test
@@ -93,15 +111,19 @@ class DatabaseIntegrationTest {
         Execution ex = new Execution(execId, "pipe-001", "proj-001", 999, ExecutionStatus.RUNNING, TriggerType.MANUAL);
         executionRepository.save(ex);
 
-        ExecutionLog log1 = new ExecutionLog(execId, "se-1", "Build", LogLevel.INFO, LogStream.STDOUT, "Log line 1");
-        ExecutionLog log2 = new ExecutionLog(execId, "se-1", "Build", LogLevel.ERROR, LogStream.STDERR, "Error log line 2");
+        try {
+            ExecutionLog log1 = new ExecutionLog(execId, "se-1", "Build", LogLevel.INFO, LogStream.STDOUT, "Log line 1");
+            ExecutionLog log2 = new ExecutionLog(execId, "se-1", "Build", LogLevel.ERROR, LogStream.STDERR, "Error log line 2");
 
-        logRepository.saveBatch(List.of(log1, log2));
+            logRepository.saveBatch(List.of(log1, log2));
 
-        List<ExecutionLog> logs = logRepository.findByExecutionId(execId);
-        assertEquals(2, logs.size());
-        assertTrue(logs.get(0).getMessage().contains("Log line 1"));
-        assertTrue(logs.get(1).getMessage().contains("Error log line 2"));
+            List<ExecutionLog> logs = logRepository.findByExecutionId(execId);
+            assertEquals(2, logs.size());
+            assertTrue(logs.get(0).getMessage().contains("Log line 1"));
+            assertTrue(logs.get(1).getMessage().contains("Error log line 2"));
+        } finally {
+            executionRepository.delete(execId);
+        }
     }
 
     @Test
@@ -112,17 +134,21 @@ class DatabaseIntegrationTest {
         Execution ex = new Execution(execId, "pipe-001", "proj-001", 998, ExecutionStatus.FAILED, TriggerType.MANUAL);
         executionRepository.save(ex);
 
-        String diagId = "diag-" + UUID.randomUUID();
-        FailureDiagnosis d = new FailureDiagnosis(diagId, execId, "se-1", "Test Stage",
-                FailureCategory.ASSERTION_FAILURE, "Test Failure", "Likely cause",
-                "Evidence text", "Suggested recovery action", "RULE_TEST_01", "1.0");
+        try {
+            String diagId = "diag-" + UUID.randomUUID();
+            FailureDiagnosis d = new FailureDiagnosis(diagId, execId, "se-1", "Test Stage",
+                    FailureCategory.ASSERTION_FAILURE, "Test Failure", "Likely cause",
+                    "Evidence text", "Suggested recovery action", "RULE_TEST_01", "1.0");
 
-        diagnosisRepository.save(d);
+            diagnosisRepository.save(d);
 
-        FailureDiagnosis fetched = diagnosisRepository.findByExecutionId(execId).orElseThrow();
-        assertEquals("Test Failure", fetched.getTitle());
-        assertEquals(FailureCategory.ASSERTION_FAILURE, fetched.getCategory());
-        assertEquals("RULE_TEST_01", fetched.getRuleId());
+            FailureDiagnosis fetched = diagnosisRepository.findByExecutionId(execId).orElseThrow();
+            assertEquals("Test Failure", fetched.getTitle());
+            assertEquals(FailureCategory.ASSERTION_FAILURE, fetched.getCategory());
+            assertEquals("RULE_TEST_01", fetched.getRuleId());
+        } finally {
+            executionRepository.delete(execId);
+        }
     }
 
     @Test
@@ -152,13 +178,17 @@ class DatabaseIntegrationTest {
         Execution ex = new Execution(execId, "pipe-001", "proj-001", 1001, ExecutionStatus.SUCCESS, TriggerType.MANUAL);
         executionRepository.save(ex);
 
-        List<Execution> byProj = executionRepository.findByProjectId("proj-001");
-        assertFalse(byProj.isEmpty());
-        assertTrue(byProj.stream().anyMatch(e -> e.getId().equals(execId)));
+        try {
+            List<Execution> byProj = executionRepository.findByProjectId("proj-001");
+            assertFalse(byProj.isEmpty());
+            assertTrue(byProj.stream().anyMatch(e -> e.getId().equals(execId)));
 
-        List<Execution> byPipe = executionRepository.findByPipelineId("pipe-001");
-        assertFalse(byPipe.isEmpty());
-        assertTrue(byPipe.stream().anyMatch(e -> e.getId().equals(execId)));
+            List<Execution> byPipe = executionRepository.findByPipelineId("pipe-001");
+            assertFalse(byPipe.isEmpty());
+            assertTrue(byPipe.stream().anyMatch(e -> e.getId().equals(execId)));
+        } finally {
+            executionRepository.delete(execId);
+        }
     }
 
     @Test
@@ -166,5 +196,30 @@ class DatabaseIntegrationTest {
     void testPingLatency() {
         long latency = dbManager.pingLatencyMillis();
         assertTrue(latency >= 0, "Ping latency should be non-negative");
+    }
+
+    @Test
+    @DisplayName("Verify transaction rollback on induced failure during pipeline save")
+    void testTransactionRollbackOnInducedFailure() {
+        String pipeId = "rollback-pipe-" + UUID.randomUUID();
+        Pipeline pipe = new Pipeline(pipeId, "proj-001", "Rollback Pipeline", "Desc", "SEQUENTIAL", true);
+        // Stage 1 is valid, Stage 2 has null name which triggers NOT NULL constraint violation
+        Stage validStage = new Stage(UUID.randomUUID().toString(), pipeId, "Valid Stage", StageType.BUILD, 1, "echo 1", 60, true, null);
+        Stage failingStage = new Stage(UUID.randomUUID().toString(), pipeId, null, StageType.TEST, 2, "echo 2", 60, true, null);
+        pipe.setStages(List.of(validStage, failingStage));
+
+        assertThrows(Exception.class, () -> pipelineRepository.save(pipe));
+
+        // Verify that the pipeline itself was rolled back and does not exist in the database
+        assertTrue(pipelineRepository.findById(pipeId).isEmpty(), "Pipeline row should not persist after transaction rollback");
+        assertTrue(pipelineRepository.findStagesByPipelineId(pipeId).isEmpty(), "Stages should not persist after transaction rollback");
+    }
+
+    @Test
+    @DisplayName("Verify persistence mode detection and active connection state")
+    void testPersistenceModeDetection() {
+        assertNotNull(dbManager.getDatabaseType());
+        assertTrue(dbManager.getDatabaseType().contains("MySQL") || dbManager.getDatabaseType().contains("H2"));
+        assertTrue(dbManager.testConnection(), "Active connection pool should be valid");
     }
 }

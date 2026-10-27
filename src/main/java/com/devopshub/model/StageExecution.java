@@ -9,8 +9,10 @@ public class StageExecution {
     private String stageId;
     private String stageName;
     private StageType stageType;
+    private String command;
     private StageExecutionStatus status;
     private int exitCode;
+    private boolean exitCodeSet;
     private Timestamp startedAt;
     private Timestamp finishedAt;
     private double durationSeconds;
@@ -20,17 +22,24 @@ public class StageExecution {
         this.id = UUID.randomUUID().toString();
         this.status = StageExecutionStatus.QUEUED;
         this.exitCode = 0;
+        this.exitCodeSet = false;
         this.durationSeconds = 0.0;
     }
 
     public StageExecution(String id, String executionId, String stageId, String stageName, StageType stageType) {
+        this(id, executionId, stageId, stageName, stageType, null);
+    }
+
+    public StageExecution(String id, String executionId, String stageId, String stageName, StageType stageType, String command) {
         this.id = id != null ? id : UUID.randomUUID().toString();
         this.executionId = executionId;
         this.stageId = stageId;
         this.stageName = stageName;
         this.stageType = stageType;
+        this.command = command;
         this.status = StageExecutionStatus.QUEUED;
         this.exitCode = 0;
+        this.exitCodeSet = false;
         this.durationSeconds = 0.0;
     }
 
@@ -49,11 +58,30 @@ public class StageExecution {
     public StageType getStageType() { return stageType; }
     public void setStageType(StageType stageType) { this.stageType = stageType; }
 
+    public String getCommand() { return command; }
+    public void setCommand(String command) { this.command = command; }
+
     public StageExecutionStatus getStatus() { return status; }
-    public void setStatus(StageExecutionStatus status) { this.status = status; }
+    public void setStatus(StageExecutionStatus status) {
+        if (status == null) return;
+        if (this.status != null && this.status.isTerminal() && !status.isTerminal()) {
+            return;
+        }
+        this.status = status;
+    }
 
     public int getExitCode() { return exitCode; }
-    public void setExitCode(int exitCode) { this.exitCode = exitCode; }
+    public void setExitCode(int exitCode) {
+        this.exitCode = exitCode;
+        this.exitCodeSet = true;
+    }
+
+    public boolean isExitCodeSet() { return exitCodeSet; }
+    public void setExitCodeSet(boolean set) { this.exitCodeSet = set; }
+
+    public boolean hasProcessExecuted() {
+        return exitCodeSet && (status == StageExecutionStatus.SUCCESS || status == StageExecutionStatus.FAILED || status == StageExecutionStatus.CANCELLED);
+    }
 
     public Timestamp getStartedAt() { return startedAt; }
     public void setStartedAt(Timestamp startedAt) { this.startedAt = startedAt; }

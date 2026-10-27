@@ -31,19 +31,19 @@ public class ConfirmationDialog {
 
         VBox root = new VBox(16);
         root.setPadding(new Insets(24));
-        root.setStyle("-fx-background-color: #FFFFFF;");
+        root.setStyle("-fx-background-color: #181926; -fx-border-color: #27283A;");
 
         HBox header = new HBox(12);
         header.setAlignment(Pos.CENTER_LEFT);
 
-        SvgIcon warningIcon = new SvgIcon(SvgIcon.IconName.ALERT_TRIANGLE, 24, Color.web("#E11D48"));
+        SvgIcon warningIcon = new SvgIcon(SvgIcon.IconName.ALERT_TRIANGLE, 24, Color.web("#F43F5E"));
         Label titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #0F172A;");
+        titleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #FFFFFF;");
         header.getChildren().addAll(warningIcon, titleLabel);
 
         Label msgLabel = new Label(message);
         msgLabel.setWrapText(true);
-        msgLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
+        msgLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #8A8D9E;");
 
         HBox buttons = new HBox(12);
         buttons.setAlignment(Pos.CENTER_RIGHT);

@@ -7,11 +7,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.*;
 
 /**
- * Coordinates concurrent Fork/Join parallel stage executions.
+ * Coordinates concurrent Fork/Join parallel stage executions with interruption propagation.
  */
 public class ParallelStageCoordinator {
     private static final Logger logger = LoggerFactory.getLogger(ParallelStageCoordinator.class);
@@ -29,26 +28,41 @@ public class ParallelStageCoordinator {
 
         logger.info("Coordinating parallel execution of {} stages...", runners.size());
 
-        List<CompletableFuture<StageExecution>> futures = new ArrayList<>();
+        List<Future<StageExecution>> futures = new ArrayList<>();
         for (StageRunner runner : runners) {
-            CompletableFuture<StageExecution> future = CompletableFuture.supplyAsync(runner::call, stageExecutor);
+            Future<StageExecution> future = stageExecutor.submit(runner::call);
             futures.add(future);
         }
 
-        CompletableFuture<Void> allOf = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-
-        try {
-            allOf.join();
-        } catch (Exception e) {
-            logger.error("Error during parallel stage execution join: {}", e.getMessage());
-        }
-
         List<StageExecution> results = new ArrayList<>();
-        for (CompletableFuture<StageExecution> f : futures) {
+        for (int i = 0; i < runners.size(); i++) {
+            Future<StageExecution> future = futures.get(i);
+            StageRunner runner = runners.get(i);
             try {
-                results.add(f.get());
-            } catch (Exception e) {
-                logger.error("Could not obtain stage result: {}", e.getMessage());
+                if (Thread.currentThread().isInterrupted()) {
+                    for (Future<StageExecution> f : futures) {
+                        f.cancel(true);
+                    }
+                }
+                StageExecution res = future.get();
+                results.add(res);
+            } catch (InterruptedException | CancellationException e) {
+                Thread.currentThread().interrupt();
+                for (Future<StageExecution> f : futures) {
+                    f.cancel(true);
+                }
+                StageExecution se = runner.getStageExecution();
+                se.setStatus(StageExecutionStatus.CANCELLED);
+                se.setExitCode(130);
+                se.setErrorMessage("Stage execution cancelled");
+                results.add(se);
+            } catch (ExecutionException e) {
+                logger.error("Stage execution threw exception: {}", e.getMessage());
+                StageExecution se = runner.getStageExecution();
+                se.setStatus(StageExecutionStatus.FAILED);
+                se.setExitCode(1);
+                se.setErrorMessage("Execution error: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
+                results.add(se);
             }
         }
 

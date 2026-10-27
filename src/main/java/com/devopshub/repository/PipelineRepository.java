@@ -107,25 +107,33 @@ public class PipelineRepository {
     public void save(Pipeline pipeline) {
         String sql = "INSERT INTO pipelines (id, project_id, name, description, execution_mode, is_active, created_at, updated_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, pipeline.getId());
-            ps.setString(2, pipeline.getProjectId());
-            ps.setString(3, pipeline.getName());
-            ps.setString(4, pipeline.getDescription());
-            ps.setString(5, pipeline.getExecutionMode());
-            ps.setBoolean(6, pipeline.isActive());
-            ps.setTimestamp(7, pipeline.getCreatedAt() != null ? pipeline.getCreatedAt() : new Timestamp(System.currentTimeMillis()));
-            ps.setTimestamp(8, new Timestamp(System.currentTimeMillis()));
-            ps.executeUpdate();
-            logger.info("Saved pipeline: {} ({})", pipeline.getName(), pipeline.getId());
-
-            // Save stages if any
-            if (pipeline.getStages() != null) {
-                for (Stage stage : pipeline.getStages()) {
-                    stage.setPipelineId(pipeline.getId());
-                    saveStage(stage);
+        try (Connection conn = dbManager.getConnection()) {
+            boolean originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setString(1, pipeline.getId());
+                    ps.setString(2, pipeline.getProjectId());
+                    ps.setString(3, pipeline.getName());
+                    ps.setString(4, pipeline.getDescription());
+                    ps.setString(5, pipeline.getExecutionMode());
+                    ps.setBoolean(6, pipeline.isActive());
+                    ps.setTimestamp(7, pipeline.getCreatedAt() != null ? pipeline.getCreatedAt() : new Timestamp(System.currentTimeMillis()));
+                    ps.setTimestamp(8, new Timestamp(System.currentTimeMillis()));
+                    ps.executeUpdate();
                 }
+
+                // Two-pass stage persistence guarantees all stage IDs exist before foreign keys are inserted
+                if (pipeline.getStages() != null) {
+                    saveStagesTwoPass(conn, pipeline.getId(), pipeline.getStages());
+                }
+                conn.commit();
+                logger.info("Saved pipeline atomically: {} ({})", pipeline.getName(), pipeline.getId());
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(originalAutoCommit);
             }
         } catch (SQLException e) {
             logger.error("Failed to save pipeline: {}", e.getMessage());
@@ -148,6 +156,53 @@ public class PipelineRepository {
         } catch (SQLException e) {
             logger.error("Failed to update pipeline: {}", e.getMessage());
             throw new DatabaseException("Failed to update pipeline", e);
+        }
+    }
+
+    public void updateWithStages(Pipeline pipeline, List<Stage> stages) {
+        String sql = "UPDATE pipelines SET name = ?, description = ?, execution_mode = ?, is_active = ?, updated_at = ? WHERE id = ?";
+        try (Connection conn = dbManager.getConnection()) {
+            boolean originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setString(1, pipeline.getName());
+                    ps.setString(2, pipeline.getDescription());
+                    ps.setString(3, pipeline.getExecutionMode());
+                    ps.setBoolean(4, pipeline.isActive());
+                    ps.setTimestamp(5, new Timestamp(System.currentTimeMillis()));
+                    ps.setString(6, pipeline.getId());
+                    ps.executeUpdate();
+                }
+
+                if (stages != null) {
+                    // 1. Delete removed stages safely
+                    List<Stage> currentStages = findStagesByPipelineId(pipeline.getId());
+                    java.util.Set<String> newIds = new java.util.HashSet<>();
+                    for (Stage s : stages) {
+                        newIds.add(s.getId());
+                    }
+                    for (Stage oldStage : currentStages) {
+                        if (!newIds.contains(oldStage.getId())) {
+                            deleteStage(conn, oldStage.getId());
+                        }
+                    }
+
+                    // 2. Persist stages and dependencies atomically using two-pass algorithm
+                    saveStagesTwoPass(conn, pipeline.getId(), stages);
+                }
+
+                conn.commit();
+                logger.info("Updated pipeline and stages atomically: {}", pipeline.getId());
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(originalAutoCommit);
+            }
+        } catch (SQLException e) {
+            logger.error("Failed to update pipeline with stages: {}", e.getMessage());
+            throw new DatabaseException("Failed to update pipeline with stages: " + e.getMessage(), e);
         }
     }
 
@@ -181,10 +236,13 @@ public class PipelineRepository {
         copy.setCreatedAt(new Timestamp(System.currentTimeMillis()));
 
         List<Stage> newStages = new ArrayList<>();
+        java.util.Map<String, String> oldToNewStageId = new java.util.HashMap<>();
         if (source.getStages() != null) {
             for (Stage s : source.getStages()) {
+                String newStageId = UUID.randomUUID().toString();
+                oldToNewStageId.put(s.getId(), newStageId);
                 Stage stageCopy = new Stage(
-                        UUID.randomUUID().toString(),
+                        newStageId,
                         newId,
                         s.getName(),
                         s.getStageType(),
@@ -195,6 +253,22 @@ public class PipelineRepository {
                         s.getParallelGroup()
                 );
                 newStages.add(stageCopy);
+            }
+
+            // Remap dependencies to new stage IDs to faithfully preserve DAG topology
+            for (int i = 0; i < source.getStages().size(); i++) {
+                Stage sourceStage = source.getStages().get(i);
+                Stage copyStage = newStages.get(i);
+                if (sourceStage.getDependsOnStageIds() != null) {
+                    List<String> remappedDeps = new ArrayList<>();
+                    for (String oldDepId : sourceStage.getDependsOnStageIds()) {
+                        String newDepId = oldToNewStageId.get(oldDepId);
+                        if (newDepId != null) {
+                            remappedDeps.add(newDepId);
+                        }
+                    }
+                    copyStage.setDependsOnStageIds(remappedDeps);
+                }
             }
         }
         copy.setStages(newStages);
@@ -253,12 +327,68 @@ public class PipelineRepository {
     }
 
     public void saveStage(Stage stage) {
+        try (Connection conn = dbManager.getConnection()) {
+            saveStage(conn, stage);
+        } catch (SQLException e) {
+            logger.error("Failed to save stage: {}", e.getMessage());
+            throw new DatabaseException("Failed to save stage", e);
+        }
+    }
+
+    public void saveStage(Connection conn, Stage stage) throws SQLException {
+        upsertStageRecord(conn, stage);
+
+        // Save dependencies safely (check existence first to prevent FK violation)
+        deleteStageDependencies(conn, stage.getId());
+        if (stage.getDependsOnStageIds() != null) {
+            for (String depId : stage.getDependsOnStageIds()) {
+                if (depId != null && !depId.trim().isEmpty() && !depId.equals(stage.getId())) {
+                    if (stageExists(conn, depId)) {
+                        saveStageDependency(conn, stage.getId(), depId);
+                    } else {
+                        logger.warn("Skipping dependency on non-existent stage ID '{}' from stage '{}' ({})",
+                                depId, stage.getName(), stage.getId());
+                    }
+                }
+            }
+        }
+    }
+
+    public void saveStagesTwoPass(Connection conn, String pipelineId, List<Stage> stages) throws SQLException {
+        if (stages == null || stages.isEmpty()) return;
+
+        // Pass 1: Upsert ALL stages into pipeline_stages so all stage IDs exist
+        java.util.Set<String> validStageIds = new java.util.HashSet<>();
+        for (Stage stage : stages) {
+            stage.setPipelineId(pipelineId);
+            upsertStageRecord(conn, stage);
+            validStageIds.add(stage.getId());
+        }
+
+        // Pass 2: Prune old dependencies and insert verified dependencies
+        for (Stage stage : stages) {
+            deleteStageDependencies(conn, stage.getId());
+            if (stage.getDependsOnStageIds() != null) {
+                for (String depId : stage.getDependsOnStageIds()) {
+                    if (depId != null && !depId.trim().isEmpty() && !depId.equals(stage.getId())) {
+                        if (validStageIds.contains(depId) || stageExists(conn, depId)) {
+                            saveStageDependency(conn, stage.getId(), depId);
+                        } else {
+                            logger.warn("Skipping dangling dependency: stage '{}' ({}) references non-existent stage ID '{}'",
+                                    stage.getName(), stage.getId(), depId);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public void upsertStageRecord(Connection conn, Stage stage) throws SQLException {
         String sql = "INSERT INTO pipeline_stages (id, pipeline_id, name, stage_type, stage_order, command, timeout_seconds, is_enabled, parallel_group, created_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE name=VALUES(name), stage_type=VALUES(stage_type), stage_order=VALUES(stage_order), " +
                 "command=VALUES(command), timeout_seconds=VALUES(timeout_seconds), is_enabled=VALUES(is_enabled), parallel_group=VALUES(parallel_group)";
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, stage.getId());
             ps.setString(2, stage.getPipelineId());
             ps.setString(3, stage.getName());
@@ -270,29 +400,43 @@ public class PipelineRepository {
             ps.setString(9, stage.getParallelGroup());
             ps.setTimestamp(10, stage.getCreatedAt() != null ? stage.getCreatedAt() : new Timestamp(System.currentTimeMillis()));
             ps.executeUpdate();
+        }
+    }
 
-            // Save dependencies
-            deleteStageDependencies(stage.getId());
-            if (stage.getDependsOnStageIds() != null) {
-                for (String depId : stage.getDependsOnStageIds()) {
-                    saveStageDependency(stage.getId(), depId);
-                }
+    public boolean stageExists(Connection conn, String stageId) {
+        String sql = "SELECT 1 FROM pipeline_stages WHERE id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, stageId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
             }
         } catch (SQLException e) {
-            logger.error("Failed to save stage: {}", e.getMessage());
-            throw new DatabaseException("Failed to save stage", e);
+            logger.debug("Error checking stage existence for {}: {}", stageId, e.getMessage());
+            return false;
         }
     }
 
     public void deleteStage(String stageId) {
-        String sql = "DELETE FROM pipeline_stages WHERE id = ?";
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, stageId);
-            ps.executeUpdate();
+        try (Connection conn = dbManager.getConnection()) {
+            deleteStage(conn, stageId);
+            logger.info("Deleted stage: {}", stageId);
         } catch (SQLException e) {
             logger.error("Failed to delete stage: {}", e.getMessage());
             throw new DatabaseException("Failed to delete stage", e);
+        }
+    }
+
+    public void deleteStage(Connection conn, String stageId) throws SQLException {
+        deleteStageDependencies(conn, stageId);
+        String sqlDepClean = "DELETE FROM stage_dependencies WHERE depends_on_stage_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sqlDepClean)) {
+            ps.setString(1, stageId);
+            ps.executeUpdate();
+        }
+        String sql = "DELETE FROM pipeline_stages WHERE id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, stageId);
+            ps.executeUpdate();
         }
     }
 
@@ -314,27 +458,37 @@ public class PipelineRepository {
     }
 
     public void saveStageDependency(String stageId, String dependsOnStageId) {
-        String sql = "INSERT INTO stage_dependencies (id, stage_id, depends_on_stage_id) VALUES (?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE stage_id=VALUES(stage_id)";
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, UUID.randomUUID().toString());
-            ps.setString(2, stageId);
-            ps.setString(3, dependsOnStageId);
-            ps.executeUpdate();
+        try (Connection conn = dbManager.getConnection()) {
+            saveStageDependency(conn, stageId, dependsOnStageId);
         } catch (SQLException e) {
             logger.error("Failed to save stage dependency: {}", e.getMessage());
         }
     }
 
-    public void deleteStageDependencies(String stageId) {
-        String sql = "DELETE FROM stage_dependencies WHERE stage_id = ?";
-        try (Connection conn = dbManager.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, stageId);
+    public void saveStageDependency(Connection conn, String stageId, String dependsOnStageId) throws SQLException {
+        String sql = "INSERT INTO stage_dependencies (id, stage_id, depends_on_stage_id) VALUES (?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE stage_id=VALUES(stage_id)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, UUID.randomUUID().toString());
+            ps.setString(2, stageId);
+            ps.setString(3, dependsOnStageId);
             ps.executeUpdate();
+        }
+    }
+
+    public void deleteStageDependencies(String stageId) {
+        try (Connection conn = dbManager.getConnection()) {
+            deleteStageDependencies(conn, stageId);
         } catch (SQLException e) {
             logger.error("Failed to delete stage dependencies: {}", e.getMessage());
+        }
+    }
+
+    public void deleteStageDependencies(Connection conn, String stageId) throws SQLException {
+        String sql = "DELETE FROM stage_dependencies WHERE stage_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, stageId);
+            ps.executeUpdate();
         }
     }
 

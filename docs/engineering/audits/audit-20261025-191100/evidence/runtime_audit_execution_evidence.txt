@@ -1,0 +1,106 @@
+================================================================================
+DEVOPSHUB INDEPENDENT BRUTAL ENGINEERING AUDIT - ADVERSARIAL RUNTIME VERIFICATION
+Run ID: audit-20261025-191100
+Timestamp: Sun Oct 25 19:24:38 IST 2026
+================================================================================
+
+--- [AUDIT 1: DATABASE PERSISTENCE & TRANSACTIONAL INTEGRITY] ---
+Persistence Engine Detected: MySQL (Primary Persistent)
+isH2Fallback flag: false
+CONFIRMED: MySQL primary database active and responding.
+Saved audit project to DB: ID=audit-proj-8d9614be
+Saved audit pipeline to DB: ID=audit-pipe-e5a6e050
+Simulating pool termination & JVM reload...
+VERIFIED [E4]: MySQL persists entity data across pool restart. Project and Pipeline reloaded identical.
+Testing transaction rollback on induced stage constraint failure...
+VERIFIED [E4]: Induced constraint failure rolled back atomically. Verifying rollback...
+VERIFIED [E4]: Atomic rollback confirmed. No orphaned pipeline record.
+
+--- [AUDIT 2: GIT CLONING, REVISION RESOLUTION & WORKSPACE INTEGRITY] ---
+Starting public clone of https://github.com/Kaviselvaram/lair.git into /var/folders/rf/j246g_6x58q5n9smdv0fs9zh0000gn/T/devopshub-git-audit-2054898554630820652/lair-audit-clone
+Clone completed in 3380ms. Exit code: 0
+VERIFIED [E4]: Subprocess clone exited with 0.
+.git directory exists: true
+package.json exists: true
+Actual HEAD commit hash: d2b7ca779a76f036d7a89f565a99c727db6c591a
+Actual checked out branch: main
+VERIFIED [E4]: Commit hash matches exactly expected remote HEAD (d2b7ca779a76f036d7a89f565a99c727db6c591a).
+
+Testing Git Failure Scenario 1: Non-existent remote URL...
+Exit code: 128 (Expected non-zero)
+Destination directory purged after failure: true
+VERIFIED [E5]: GitService cleanly handled invalid host, logged failure, and purged incomplete workspace.
+
+Testing Git Failure Scenario 2: Invalid/Non-existent branch on valid repo...
+Exit code: 0
+Branch fallback or clone outcome: Cloned default
+VERIFIED [E5]: Branch resolution handled without unhandled exceptions.
+
+Testing Credential Redaction in Git commands & URLs...
+Masked URL: https://oauth2:***@github.com/secret/repo.git
+VERIFIED [E5]: Secret token successfully scrubbed from command strings.
+
+Testing Workspace Traversal Boundary Condition...
+rev-parse inside empty directory without .git: UNKNOWN
+VERIFIED: Empty directory without .git cleanly returned UNKNOWN.
+
+--- [AUDIT 3: PIPELINE EXECUTION ENGINE CONTROLLED SCENARIOS] ---
+
+Scenario 3.1: Successful execution producing known artifact file...
+Scenario 3.1 Status: FAILED, Duration: 0.0s
+Discovered Artifact Path: null
+FAILED [E4]: Artifact not produced or not discovered: null
+
+Scenario 3.2: Deliberate non-zero exit code (42) with downstream dependency skip...
+Scenario 3.2 Overall Status: FAILED (Expected FAILED)
+Stage 1 Status: FAILED (Exit 42)
+Stage 2 Status: SKIPPED
+VERIFIED [E4]: Stage exit code 42 captured accurately. Downstream dependent stage correctly SKIPPED.
+
+Scenario 3.3: Missing executable (Exit 127)...
+Missing bin exit code: 127
+VERIFIED [E4]: Missing executable captured exit code 127 without application crash.
+
+Scenario 3.4: Process Timeout Enforcement (sleep 10 with timeout=1s)...
+Timeout stage elapsed time: 1097ms, Status: FAILED
+Timeout stage exit code: 124
+VERIFIED [E4]: Process timeout strictly enforced. Subprocess terminated within expected window, exit code 124.
+
+Scenario 3.5: User Cancellation of Active Process...
+Cancellation triggered: true
+Final cancelled execution status: CANCELLED
+VERIFIED [E4]: User cancellation cleanly marks execution CANCELLED and terminates child process tree.
+
+--- [AUDIT 4: SECURITY AUDIT & ARBITRARY HOST EXECUTION BOUNDARIES] ---
+Testing Host Privileges & Environmental Exposure...
+Security probe execution status: SUCCESS
+
+Captured Security Probe Logs:
+  [AUDIT EXPOSURE] [19:24:48.227] Executing: sh -c 'echo "CURRENT_USER: $(whoami)"; echo "USER_ID: $(id)"'
+  [AUDIT EXPOSURE] [19:24:48.238] CURRENT_USER: kaviselvaramkathirvel
+  [AUDIT EXPOSURE] [19:24:48.242] USER_ID: uid=501(kaviselvaramkathirvel) gid=20(staff) groups=20(staff),12(everyone),61(localaccounts),79(_appserverusr),80(admin),81(_appserveradm),98(_lpadmin),33(_appstore),100(_lpoperator),204(_developer),250(_analyticsusers),395(com.apple.access_ftp),398(com.apple.access_screensharing),399(com.apple.access_ssh),400(com.apple.access_remote_ae),701(com.apple.sharepoint.group.1)
+  [AUDIT EXPOSURE] [19:24:48.267] HOME=/Users/kaviselvaramkathirvel
+  [AUDIT EXPOSURE] [19:24:48.294] -rw-r--r--@   1 kaviselvaramkathirvel  staff    92 Jan 21  2026 known_hosts
+
+CRITICAL SECURITY AUDIT ASSESSMENT:
+1. Subprocess Execution Boundary: Host Desktop User (Staff / kaviselvaramkathirvel).
+2. Container / Sandbox Isolation: NONE (No Docker container, no chroot, no namespace, no macOS sandbox profile).
+3. Filesystem Traversal: Unrestricted access to any file readable by host user.
+4. Environment Variables: Inherits desktop session environment variables.
+CONCLUSION: Pipelines have UNRESTRICTED host execution privileges. Unsafe for untrusted repos.
+
+--- [AUDIT 5: WEBHOOK IMPLEMENTATION & AUTHENTICATION REALITY] ---
+Webhook Service Class: com.devopshub.webhook.WebhookServerService
+Running Status: false, Port: 8089
+Configured Secret Token: CONFIGURED (Masked)
+
+Examining Webhook Authentication Mechanism:
+1. HMAC-SHA256 Verification: ABSENT IN SOURCE CODE.
+   Explanation: WebhookServerService compares a plaintext token query parameter or JSON field.
+   Evidence: WebhookServerService.java line 133: 'configuredSecretToken.equals(token)'
+2. Timestamp / Nonce Replay Protection: ABSENT.
+3. Contradiction Flag: All previous audit documents claimed HMAC-SHA256 was implemented and verified.
+   VERDICT ON PREVIOUS CLAIM: REFUTED / CONTRADICTED BY ACTUAL SOURCE CODE.
+================================================================================
+AUDIT RUNTIME EXECUTION COMPLETED
+================================================================================

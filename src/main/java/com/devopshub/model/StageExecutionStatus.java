@@ -6,7 +6,9 @@ public enum StageExecutionStatus {
     SUCCESS,
     FAILED,
     SKIPPED,
-    CANCELLED;
+    CANCELLED,
+    BLOCKED,
+    TIMED_OUT;
 
     public static StageExecutionStatus fromString(String val) {
         if (val == null) return QUEUED;
@@ -18,6 +20,6 @@ public enum StageExecutionStatus {
     }
 
     public boolean isTerminal() {
-        return this == SUCCESS || this == FAILED || this == SKIPPED || this == CANCELLED;
+        return this == SUCCESS || this == FAILED || this == SKIPPED || this == CANCELLED || this == BLOCKED || this == TIMED_OUT;
     }
 }

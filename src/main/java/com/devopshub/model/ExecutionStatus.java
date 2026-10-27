@@ -5,7 +5,9 @@ public enum ExecutionStatus {
     RUNNING,
     SUCCESS,
     FAILED,
-    CANCELLED;
+    CANCELLED,
+    BLOCKED,
+    TIMED_OUT;
 
     public static ExecutionStatus fromString(String val) {
         if (val == null) return QUEUED;
@@ -17,6 +19,6 @@ public enum ExecutionStatus {
     }
 
     public boolean isTerminal() {
-        return this == SUCCESS || this == FAILED || this == CANCELLED;
+        return this == SUCCESS || this == FAILED || this == CANCELLED || this == BLOCKED || this == TIMED_OUT;
     }
 }

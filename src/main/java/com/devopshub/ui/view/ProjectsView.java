@@ -15,35 +15,48 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
+import java.io.File;
 import java.util.List;
 
 /**
- * Projects Management View: CRUD operations, repository linkage, search, and filtering.
+ * Projects Management View matching visual reference Screen 2:
+ * "Choose a project to work" Grid View + Table View toggle,
+ * project cards with preview thumbnails, team avatars, and full CRUD persistence.
  */
 public class ProjectsView extends VBox {
 
     private final MainLayoutView mainLayout;
     private final ProjectService projectService;
+    private final com.devopshub.service.ProjectImportService importService = new com.devopshub.service.ProjectImportService();
+    private final com.devopshub.git.GitService gitService = new com.devopshub.git.GitService();
+    private final com.devopshub.service.PipelineService pipelineService = new com.devopshub.service.PipelineService();
 
     private TextField searchField;
     private ComboBox<String> typeFilter;
     private ComboBox<String> statusFilter;
+    private Button gridViewBtn;
+    private Button tableViewBtn;
+
+    private StackPane contentArea;
+    private FlowPane gridPane;
     private TableView<Project> tableView;
-    private StackPane tableContainer;
+    private boolean isGridView = true;
+    private Project selectedProject;
 
     public ProjectsView(MainLayoutView mainLayout, ProjectService projectService) {
         this.mainLayout = mainLayout;
         this.projectService = projectService;
 
-        this.setSpacing(16);
+        this.setSpacing(18);
         this.setPadding(new Insets(24));
         this.setStyle("-fx-background-color: transparent;");
 
         buildToolbar();
-        buildTable();
+        buildContentArea();
         refresh();
     }
 
@@ -51,21 +64,27 @@ public class ProjectsView extends VBox {
         HBox toolbar = new HBox(12);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
+        VBox titleBox = new VBox(2);
+        Label subtitle = new Label("Choose project:");
+        subtitle.setStyle("-fx-font-size: 11px; -fx-text-fill: #8A8D9E;");
+        Label title = new Label("Choose a project to work");
+        title.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+        titleBox.getChildren().addAll(subtitle, title);
+
         searchField = new TextField();
-        searchField.setPromptText("Search projects by name, description, or repository...");
-        searchField.setPrefWidth(320);
+        searchField.setPromptText("Search...");
+        searchField.getStyleClass().add("header-search-field");
+        searchField.setPrefWidth(220);
         searchField.textProperty().addListener((obs, oldVal, newVal) -> applyFilters());
 
-        Label typeLabel = new Label("Type:");
-        typeLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+        Label datePill = new Label(today);
+        datePill.getStyleClass().add("header-date-badge");
 
         typeFilter = new ComboBox<>();
-        typeFilter.getItems().addAll("ALL", "Java", "Java/Spring", "Python", "NodeJS", "Go");
+        typeFilter.getItems().addAll("ALL", "Java", "Java/Spring", "Python", "NodeJS", "Next.js (NodeJS)", "Go");
         typeFilter.setValue("ALL");
         typeFilter.setOnAction(e -> applyFilters());
-
-        Label statusLabel = new Label("Status:");
-        statusLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
 
         statusFilter = new ComboBox<>();
         statusFilter.getItems().addAll("ALL", "ACTIVE", "INACTIVE", "ARCHIVED");
@@ -75,35 +94,79 @@ public class ProjectsView extends VBox {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button newProjBtn = new Button("New Project");
-        newProjBtn.getStyleClass().add("btn-primary");
-        newProjBtn.setGraphic(new SvgIcon(SvgIcon.IconName.PLUS, 13, Color.WHITE));
-        newProjBtn.setOnAction(e -> showCreateProjectModal());
+        // Actions matching reference: "+ Create", "Import", "Remove"
+        Button createBtn = new Button("+ Create");
+        createBtn.getStyleClass().add("btn-primary");
+        createBtn.setMinWidth(Region.USE_PREF_SIZE);
+        createBtn.setOnAction(e -> showCreateProjectModal());
 
-        Button refreshBtn = new Button("Refresh");
-        refreshBtn.getStyleClass().add("btn-secondary");
-        refreshBtn.setGraphic(new SvgIcon(SvgIcon.IconName.REFRESH, 13, Color.web("#64748B")));
-        refreshBtn.setOnAction(e -> refresh());
+        Button importBtn = new Button("Import");
+        importBtn.getStyleClass().add("btn-secondary");
+        importBtn.setGraphic(new SvgIcon(SvgIcon.IconName.SHARE, 13, Color.web("#8A8D9E")));
+        importBtn.setMinWidth(Region.USE_PREF_SIZE);
+        importBtn.setOnAction(e -> handleImportProject());
 
-        toolbar.getChildren().addAll(searchField, typeLabel, typeFilter, statusLabel, statusFilter, spacer, newProjBtn, refreshBtn);
+        Button removeBtn = new Button("Remove");
+        removeBtn.getStyleClass().add("btn-secondary");
+        removeBtn.setGraphic(new SvgIcon(SvgIcon.IconName.TRASH, 13, Color.web("#F43F5E")));
+        removeBtn.setMinWidth(Region.USE_PREF_SIZE);
+        removeBtn.setOnAction(e -> handleRemoveSelected());
+
+        // Grid / Table View Switcher
+        HBox viewSwitcher = new HBox(2);
+        viewSwitcher.setStyle("-fx-background-color: #1A1B29; -fx-padding: 3px; -fx-background-radius: 8px; -fx-border-color: #26283C;");
+
+        gridViewBtn = new Button();
+        gridViewBtn.setGraphic(new SvgIcon(SvgIcon.IconName.GRID, 14, Color.web("#38BDF8")));
+        gridViewBtn.setStyle("-fx-background-color: #24263A; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+        gridViewBtn.setOnAction(e -> setViewMode(true));
+
+        tableViewBtn = new Button();
+        tableViewBtn.setGraphic(new SvgIcon(SvgIcon.IconName.LIST, 14, Color.web("#8A8D9E")));
+        tableViewBtn.setStyle("-fx-background-color: transparent; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+        tableViewBtn.setOnAction(e -> setViewMode(false));
+
+        viewSwitcher.getChildren().addAll(gridViewBtn, tableViewBtn);
+
+        toolbar.getChildren().addAll(titleBox, searchField, datePill, typeFilter, statusFilter, spacer, createBtn, importBtn, removeBtn, viewSwitcher);
         this.getChildren().add(toolbar);
     }
 
-    private void buildTable() {
-        tableContainer = new StackPane();
-        VBox.setVgrow(tableContainer, Priority.ALWAYS);
+    private void buildContentArea() {
+        contentArea = new StackPane();
+        VBox.setVgrow(contentArea, Priority.ALWAYS);
 
+        // 1. Grid View (Reference Screen 2)
+        gridPane = new FlowPane();
+        gridPane.setHgap(20);
+        gridPane.setVgap(20);
+        gridPane.setPadding(new Insets(10, 0, 20, 0));
+        gridPane.setStyle("-fx-background-color: transparent;");
+
+        ScrollPane gridScroll = new ScrollPane(gridPane);
+        gridScroll.setFitToWidth(true);
+        gridScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+
+        // 2. Table View (Data Audit)
+        buildTable();
+
+        contentArea.getChildren().setAll(gridScroll);
+        this.getChildren().add(contentArea);
+    }
+
+    private void buildTable() {
         tableView = new TableView<>();
         tableView.getStyleClass().add("card");
         tableView.setPrefHeight(600);
 
-        // Double-click row opens Project Details
         tableView.setRowFactory(tv -> {
             TableRow<Project> row = new TableRow<>();
             row.setOnMouseClicked(event -> {
-                if (event.getClickCount() == 2 && (!row.isEmpty())) {
-                    Project p = row.getItem();
-                    mainLayout.navigateToProjectDetail(p);
+                if (!row.isEmpty()) {
+                    selectedProject = row.getItem();
+                    if (event.getClickCount() == 2) {
+                        mainLayout.navigateToProjectDetail(selectedProject);
+                    }
                 }
             });
             return row;
@@ -149,7 +212,7 @@ public class ProjectsView extends VBox {
         });
 
         TableColumn<Project, Void> colActions = new TableColumn<>("Actions");
-        colActions.setPrefWidth(180);
+        colActions.setPrefWidth(160);
         colActions.setCellFactory(col -> new TableCell<>() {
             private final Button viewBtn = new Button("View");
             private final Button editBtn = new Button("Edit");
@@ -163,9 +226,8 @@ public class ProjectsView extends VBox {
                 editBtn.setStyle("-fx-padding: 3px 8px; -fx-font-size: 11px;");
 
                 deleteBtn.getStyleClass().add("btn-secondary");
-                deleteBtn.setGraphic(new SvgIcon(SvgIcon.IconName.TRASH, 12, Color.web("#E11D48")));
+                deleteBtn.setGraphic(new SvgIcon(SvgIcon.IconName.TRASH, 12, Color.web("#F43F5E")));
                 deleteBtn.setStyle("-fx-padding: 3px 6px;");
-                deleteBtn.setTooltip(new Tooltip("Delete Project"));
             }
 
             @Override
@@ -177,29 +239,29 @@ public class ProjectsView extends VBox {
                     Project p = getTableRow().getItem();
                     viewBtn.setOnAction(e -> mainLayout.navigateToProjectDetail(p));
                     editBtn.setOnAction(e -> showEditProjectModal(p));
-                    deleteBtn.setOnAction(e -> {
-                        boolean confirmed = ConfirmationDialog.show(mainLayout.getPrimaryStage(),
-                                "Delete Project",
-                                "Are you sure you want to delete project '" + p.getName() + "' and its associated delivery pipelines?\nThis operation is irreversible.",
-                                "Delete Project");
-                        if (confirmed) {
-                            try {
-                                projectService.deleteProject(p.getId());
-                                mainLayout.showToast("Project deleted successfully", ToastNotification.ToastType.SUCCESS);
-                                refresh();
-                            } catch (Exception ex) {
-                                mainLayout.showToast("Failed to delete project: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
-                            }
-                        }
-                    });
+                    deleteBtn.setOnAction(e -> confirmDeleteProject(p));
                     setGraphic(box);
                 }
             }
         });
 
         tableView.getColumns().addAll(colName, colDesc, colRepo, colBranch, colType, colPipelines, colStatus, colActions);
-        tableContainer.getChildren().add(tableView);
-        this.getChildren().add(tableContainer);
+    }
+
+    private void setViewMode(boolean grid) {
+        this.isGridView = grid;
+        if (grid) {
+            gridViewBtn.setStyle("-fx-background-color: #24263A; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+            tableViewBtn.setStyle("-fx-background-color: transparent; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+            ScrollPane gridScroll = new ScrollPane(gridPane);
+            gridScroll.setFitToWidth(true);
+            gridScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+            contentArea.getChildren().setAll(gridScroll);
+        } else {
+            gridViewBtn.setStyle("-fx-background-color: transparent; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+            tableViewBtn.setStyle("-fx-background-color: #24263A; -fx-padding: 5px 8px; -fx-background-radius: 6px;");
+            contentArea.getChildren().setAll(tableView);
+        }
     }
 
     private void applyFilters() {
@@ -218,22 +280,281 @@ public class ProjectsView extends VBox {
             return matchQ && matchType && matchStatus;
         }).toList();
 
+        // Update Table
         tableView.getItems().setAll(filtered);
 
+        // Update Grid
+        gridPane.getChildren().clear();
         if (filtered.isEmpty()) {
-            if (tableContainer.getChildren().size() == 1) {
-                EmptyStateView emptyState = new EmptyStateView(
-                        SvgIcon.IconName.PROJECTS,
-                        "No Projects Found",
-                        "No projects match the current search filters. Create a new project to get started.",
-                        "Create New Project",
-                        this::showCreateProjectModal
-                );
-                tableContainer.getChildren().add(emptyState);
+            EmptyStateView emptyState = new EmptyStateView(
+                    SvgIcon.IconName.PROJECTS,
+                    "No Projects Found",
+                    "No projects match the current search filters. Create a new project to get started.",
+                    "Create New Project",
+                    this::showCreateProjectModal
+            );
+            if (isGridView) {
+                contentArea.getChildren().setAll(emptyState);
             }
         } else {
-            if (tableContainer.getChildren().size() > 1) {
-                tableContainer.getChildren().remove(1);
+            for (Project p : filtered) {
+                gridPane.getChildren().add(createProjectGridCard(p));
+            }
+            if (isGridView) {
+                ScrollPane gridScroll = new ScrollPane(gridPane);
+                gridScroll.setFitToWidth(true);
+                gridScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+                contentArea.getChildren().setAll(gridScroll);
+            }
+        }
+    }
+
+    /**
+     * Creates a Project Card matching Reference Screen 2 ("Choose a project to work"):
+     * Includes stylized thumbnail illustration banner, title, relative modified time, and team avatars.
+     */
+    private VBox createProjectGridCard(Project project) {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("project-grid-card");
+        card.setPrefWidth(260);
+
+        // 1. Thumbnail Banner with UI/Code Mockup Graphic
+        StackPane thumbnail = new StackPane();
+        thumbnail.getStyleClass().add("project-thumbnail-area");
+
+        // Inner decorative preview graphic based on project type/name
+        HBox mockupGraphic = createMockupGraphic(project);
+        thumbnail.getChildren().add(mockupGraphic);
+
+        // 2. Info Row: Title & Status
+        HBox infoRow = new HBox(8);
+        infoRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label title = new Label(project.getName());
+        title.getStyleClass().add("project-card-title");
+        title.setMaxWidth(140);
+
+        boolean isSample = project.getId() != null &&
+                (project.getId().startsWith("proj-00") || project.getId().startsWith("proj-ref") ||
+                 (project.getRepositoryUrl() != null && project.getRepositoryUrl().contains("github.com/vit/")));
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        StatusBadge statusBadge = new StatusBadge(project.getStatus());
+        if (isSample) {
+            Label demoBadge = new Label("SAMPLE");
+            demoBadge.setStyle("-fx-background-color: rgba(245, 158, 11, 0.15); -fx-text-fill: #F59E0B; " +
+                    "-fx-font-size: 9px; -fx-font-weight: bold; -fx-padding: 2px 6px; -fx-background-radius: 4px;");
+            infoRow.getChildren().addAll(title, demoBadge, spacer, statusBadge);
+        } else {
+            infoRow.getChildren().addAll(title, spacer, statusBadge);
+        }
+
+        // 3. Footer: Last Modified & Branch
+        HBox footer = new HBox(8);
+        footer.setAlignment(Pos.CENTER_LEFT);
+
+        Label editedTime = new Label(formatRelativeTime(project.getUpdatedAt() != null ? project.getUpdatedAt() : project.getCreatedAt()));
+        editedTime.getStyleClass().add("project-card-subtitle");
+
+        Region footerSpacer = new Region();
+        HBox.setHgrow(footerSpacer, Priority.ALWAYS);
+
+        // Real Branch / Type Pill
+        Label branchPill = createBranchPill(project);
+        footer.getChildren().addAll(editedTime, footerSpacer, branchPill);
+
+        card.getChildren().addAll(thumbnail, infoRow, footer);
+
+        card.setOnMouseClicked(e -> {
+            selectedProject = project;
+            if (e.getClickCount() == 2) {
+                mainLayout.navigateToProjectDetail(project);
+            }
+        });
+
+        // Context Menu on right click
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem openItem = new MenuItem("Open Project");
+        openItem.setOnAction(e -> mainLayout.navigateToProjectDetail(project));
+        MenuItem editItem = new MenuItem("Edit Configuration");
+        editItem.setOnAction(e -> showEditProjectModal(project));
+        MenuItem deleteItem = new MenuItem("Delete Project");
+        deleteItem.setOnAction(e -> confirmDeleteProject(project));
+        contextMenu.getItems().addAll(openItem, editItem, new SeparatorMenuItem(), deleteItem);
+
+        card.setOnContextMenuRequested(e -> contextMenu.show(card, e.getScreenX(), e.getScreenY()));
+
+        return card;
+    }
+
+    private HBox createMockupGraphic(Project project) {
+        HBox graphic = new HBox(8);
+        graphic.setAlignment(Pos.CENTER);
+        graphic.setPadding(new Insets(10));
+
+        String name = project.getName() != null ? project.getName().toLowerCase() : "";
+        String accentColor = "#38BDF8";
+        String secondaryColor = "#8B5CF6";
+
+        if (name.contains("promo")) {
+            accentColor = "#EC4899";
+            secondaryColor = "#8B5CF6";
+        } else if (name.contains("gold")) {
+            accentColor = "#F59E0B";
+            secondaryColor = "#D97706";
+        } else if (name.contains("store") && !name.contains("in")) {
+            accentColor = "#10B981";
+            secondaryColor = "#38BDF8";
+        } else if (name.contains("like")) {
+            accentColor = "#EF4444";
+            secondaryColor = "#F97316";
+        } else if (name.contains("instore")) {
+            accentColor = "#0284C7";
+            secondaryColor = "#38BDF8";
+        }
+
+        VBox miniCard1 = new VBox(4);
+        miniCard1.setStyle("-fx-background-color: #1A1C29; -fx-padding: 6px; -fx-background-radius: 6px; -fx-min-width: 65px;");
+        Region bar1 = new Region();
+        bar1.setStyle(String.format("-fx-background-color: %s; -fx-pref-height: 4px; -fx-pref-width: 30px; -fx-background-radius: 2px;", accentColor));
+        Region bar2 = new Region();
+        bar2.setStyle("-fx-background-color: #33364D; -fx-pref-height: 3px; -fx-pref-width: 45px; -fx-background-radius: 2px;");
+        miniCard1.getChildren().addAll(bar1, bar2);
+
+        VBox miniCard2 = new VBox(4);
+        miniCard2.setStyle("-fx-background-color: #222538; -fx-padding: 6px; -fx-background-radius: 6px; -fx-min-width: 75px;");
+        HBox topDotRow = new HBox(4);
+        Region dot = new Region();
+        dot.setStyle(String.format("-fx-background-color: %s; -fx-min-width: 6px; -fx-min-height: 6px; -fx-background-radius: 3px;", accentColor));
+        Region tag = new Region();
+        tag.setStyle(String.format("-fx-background-color: %s; -fx-pref-height: 4px; -fx-pref-width: 24px; -fx-background-radius: 2px;", secondaryColor));
+        topDotRow.getChildren().addAll(dot, tag);
+
+        Region line = new Region();
+        line.setStyle("-fx-background-color: #4A4E6B; -fx-pref-height: 3px; -fx-pref-width: 50px; -fx-background-radius: 2px;");
+        miniCard2.getChildren().addAll(topDotRow, line);
+
+        graphic.getChildren().addAll(miniCard1, miniCard2);
+        return graphic;
+    }
+
+    private Label createBranchPill(Project project) {
+        String branch = project.getDefaultBranch() != null && !project.getDefaultBranch().isEmpty()
+                ? project.getDefaultBranch() : "main";
+        Label pill = new Label(branch);
+        pill.setStyle("-fx-background-color: #24263A; -fx-text-fill: #8A8D9E; -fx-font-size: 10px; " +
+                "-fx-padding: 2px 6px; -fx-background-radius: 4px; -fx-border-color: #33364D; -fx-border-radius: 4px;");
+        return pill;
+    }
+
+    private String formatRelativeTime(java.sql.Timestamp ts) {
+        if (ts == null) return "Created recently";
+        long diff = System.currentTimeMillis() - ts.getTime();
+        long hours = diff / (3600 * 1000);
+        if (hours < 1) return "Edited just now";
+        if (hours < 24) return "Edited " + hours + " hours ago";
+        long days = hours / 24;
+        return "Edited " + days + " days ago";
+    }
+
+    private void handleImportProject() {
+        Alert choice = new Alert(Alert.AlertType.CONFIRMATION);
+        choice.initOwner(mainLayout.getPrimaryStage());
+        choice.setTitle("Import Project Source");
+        choice.setHeaderText("Choose Project Source Type");
+        choice.setContentText("Select whether to import from an existing local project folder or an uncompressed .zip archive:");
+
+        ButtonType btnDir = new ButtonType("Local Directory");
+        ButtonType btnZip = new ButtonType("Archive File (.zip)");
+        ButtonType btnCancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        choice.getButtonTypes().setAll(btnDir, btnZip, btnCancel);
+
+        var result = choice.showAndWait();
+        if (result.isEmpty() || result.get() == btnCancel) return;
+
+        if (result.get() == btnDir) {
+            javafx.stage.DirectoryChooser dirChooser = new javafx.stage.DirectoryChooser();
+            dirChooser.setTitle("Select Local Project Root Directory");
+            File initial = new File(System.getProperty("user.dir"));
+            if (initial.exists()) dirChooser.setInitialDirectory(initial);
+
+            File selectedDir = dirChooser.showDialog(mainLayout.getPrimaryStage());
+            if (selectedDir != null) {
+                try {
+                    com.devopshub.service.ProjectImportService.DetectedProject detected = importService.inspectDirectory(selectedDir);
+                    String branch = detected.isHasGit() ? gitService.getCurrentBranch(selectedDir) : "main";
+                    Project p = projectService.createProject(detected.getName(),
+                            "Imported " + detected.getBuildSystem() + " project from " + selectedDir.getAbsolutePath(),
+                            selectedDir.getAbsolutePath(), branch, detected.getProjectType());
+
+                    // Auto-generate authentic delivery pipeline
+                    List<com.devopshub.model.Stage> stages = importService.generateAuthenticStages(detected.getBuildSystem(), null);
+                    pipelineService.createPipeline(p.getId(), p.getName() + "-CI",
+                            "Automated delivery pipeline for " + detected.getBuildSystem(), "SEQUENTIAL", stages);
+
+                    mainLayout.showToast(String.format("Project '%s' (%s) imported with delivery pipeline!",
+                            p.getName(), detected.getBuildSystem()), ToastNotification.ToastType.SUCCESS);
+                    refresh();
+                } catch (Exception ex) {
+                    mainLayout.showToast("Import failed: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
+                }
+            }
+        } else if (result.get() == btnZip) {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Select Project Archive (.zip)");
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Zip Archives (*.zip)", "*.zip"));
+            File initial = new File(System.getProperty("user.dir"));
+            if (initial.exists()) fileChooser.setInitialDirectory(initial);
+
+            File selectedZip = fileChooser.showOpenDialog(mainLayout.getPrimaryStage());
+            if (selectedZip != null) {
+                try {
+                    String folderName = selectedZip.getName().replaceAll("(?i)\\.zip$", "");
+                    File targetExtractDir = new File(com.devopshub.config.AppConfig.getInstance().getWorkspaceDir(), "imported/" + folderName);
+                    importService.extractArchiveSafely(selectedZip, targetExtractDir);
+
+                    com.devopshub.service.ProjectImportService.DetectedProject detected = importService.inspectDirectory(targetExtractDir);
+                    Project p = projectService.createProject(detected.getName(),
+                            "Extracted " + detected.getBuildSystem() + " project from " + selectedZip.getName(),
+                            targetExtractDir.getAbsolutePath(), "main", detected.getProjectType());
+
+                    List<com.devopshub.model.Stage> stages = importService.generateAuthenticStages(detected.getBuildSystem(), null);
+                    pipelineService.createPipeline(p.getId(), p.getName() + "-CI",
+                            "Automated delivery pipeline for " + detected.getBuildSystem(), "SEQUENTIAL", stages);
+
+                    mainLayout.showToast(String.format("Archive '%s' extracted safely (%s) with delivery pipeline!",
+                            p.getName(), detected.getBuildSystem()), ToastNotification.ToastType.SUCCESS);
+                    refresh();
+                } catch (Exception ex) {
+                    mainLayout.showToast("Archive import failed: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
+                }
+            }
+        }
+    }
+
+    private void handleRemoveSelected() {
+        if (selectedProject == null) {
+            mainLayout.showToast("Select a project first to remove.", ToastNotification.ToastType.WARNING);
+            return;
+        }
+        confirmDeleteProject(selectedProject);
+    }
+
+    private void confirmDeleteProject(Project p) {
+        boolean confirmed = ConfirmationDialog.show(mainLayout.getPrimaryStage(),
+                "Delete Project",
+                "Are you sure you want to delete project '" + p.getName() + "' and its associated delivery pipelines?\nThis operation is irreversible.",
+                "Delete Project");
+        if (confirmed) {
+            try {
+                projectService.deleteProject(p.getId());
+                mainLayout.showToast("Project deleted successfully", ToastNotification.ToastType.SUCCESS);
+                selectedProject = null;
+                refresh();
+            } catch (Exception ex) {
+                mainLayout.showToast("Failed to delete project: " + ex.getMessage(), ToastNotification.ToastType.ERROR);
             }
         }
     }
@@ -255,14 +576,14 @@ public class ProjectsView extends VBox {
         modal.initModality(Modality.APPLICATION_MODAL);
         modal.initOwner(mainLayout.getPrimaryStage());
         modal.setTitle(existing == null ? "Create New Project" : "Edit Project Details");
-        modal.setResizable(false);
+        modal.setResizable(true);
 
         VBox form = new VBox(14);
         form.setPadding(new Insets(24));
-        form.setStyle("-fx-background-color: #FFFFFF;");
+        form.setStyle("-fx-background-color: #181926; -fx-border-color: #27283A;");
 
         Label titleLabel = new Label(existing == null ? "Create Project" : "Edit Project");
-        titleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #0F172A;");
+        titleLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
 
         Label errorBanner = new Label();
         errorBanner.getStyleClass().add("form-error-label");
@@ -276,13 +597,13 @@ public class ProjectsView extends VBox {
         descField.setPrefRowCount(3);
 
         TextField repoField = new TextField(existing != null ? existing.getRepositoryUrl() : "");
-        repoField.setPromptText("Repository URL (e.g. https://github.com/org/payments.git)");
+        repoField.setPromptText("Repository URL or local path");
 
         TextField branchField = new TextField(existing != null ? existing.getDefaultBranch() : "main");
         branchField.setPromptText("Default Branch (e.g. main)");
 
         ComboBox<String> typeCombo = new ComboBox<>();
-        typeCombo.getItems().addAll("Java", "Java/Spring", "Python", "NodeJS", "Go");
+        typeCombo.getItems().addAll("Java", "Java/Spring", "Python", "NodeJS", "Next.js (NodeJS)", "Go");
         typeCombo.setValue(existing != null ? existing.getProjectType() : "Java");
 
         HBox btnBox = new HBox(10);
@@ -300,21 +621,71 @@ public class ProjectsView extends VBox {
             if (name.isEmpty()) {
                 errorBanner.setText("Project name is required.");
                 errorBanner.setVisible(true);
-                nameField.setStyle("-fx-border-color: #E11D48;");
+                nameField.setStyle("-fx-border-color: #F43F5E;");
                 return;
             }
-            if (repo.isEmpty()) {
-                errorBanner.setText("Repository URL is required.");
+            if (!gitService.isValidRepositoryUrl(repo)) {
+                errorBanner.setText("Invalid repository URL or local directory path.");
                 errorBanner.setVisible(true);
-                repoField.setStyle("-fx-border-color: #E11D48;");
+                repoField.setStyle("-fx-border-color: #F43F5E;");
                 return;
             }
 
             try {
                 if (existing == null) {
-                    projectService.createProject(name, descField.getText().trim(),
-                            repo, branchField.getText().trim(), typeCombo.getValue());
-                    mainLayout.showToast("Project created successfully!", ToastNotification.ToastType.SUCCESS);
+                    String selectedType = typeCombo.getValue();
+                    File localPath = new File(repo);
+                    com.devopshub.service.ProjectImportService.DetectedProject detected = null;
+                    File tempWorkspace = null;
+                    if (localPath.exists() && localPath.isDirectory()) {
+                        try {
+                            detected = importService.inspectDirectory(localPath);
+                            selectedType = detected.getProjectType();
+                        } catch (Exception ignored) {}
+                    } else if (gitService.isValidRepositoryUrl(repo)) {
+                        try {
+                            String branch = branchField.getText().trim().isEmpty() ? "main" : branchField.getText().trim();
+                            tempWorkspace = new File(com.devopshub.config.AppConfig.getInstance().getWorkspaceDir(), "temp-inspect-" + java.util.UUID.randomUUID());
+                            detected = importService.inspectGitRepository(repo, branch, tempWorkspace);
+                            selectedType = detected.getProjectType();
+                        } catch (Exception ex) {
+                            // Non-fatal if offline/unreachable during form entry; fallback to selected combo type
+                            if (tempWorkspace != null && tempWorkspace.exists()) {
+                                gitService.safeCleanupDirectory(tempWorkspace);
+                                tempWorkspace = null;
+                            }
+                        }
+                    }
+
+                    Project created = projectService.createProject(name, descField.getText().trim(),
+                            repo, branchField.getText().trim(), selectedType);
+
+                    // Move inspected repository directly to persistent project workspace
+                    if (tempWorkspace != null && tempWorkspace.exists()) {
+                        try {
+                            File projectWs = gitService.getProjectWorkspace(created.getId());
+                            if (projectWs.exists() && (projectWs.list() == null || projectWs.list().length == 0)) {
+                                projectWs.delete();
+                            }
+                            boolean moved = tempWorkspace.renameTo(projectWs);
+                            if (!moved) {
+                                gitService.safeCleanupDirectory(tempWorkspace);
+                            }
+                        } catch (Exception ex) {
+                            gitService.safeCleanupDirectory(tempWorkspace);
+                        }
+                    }
+
+                    // Create automated delivery pipeline tailored to genuine detected build system
+                    List<com.devopshub.model.Stage> defaultStages = detected != null ?
+                            importService.generateAuthenticStages(detected, null) :
+                            importService.generateAuthenticStages(selectedType, null);
+
+                    pipelineService.createPipeline(created.getId(), created.getName() + "-CI",
+                            "Automated delivery pipeline for " + created.getName(), "SEQUENTIAL", defaultStages);
+
+                    mainLayout.showToast(String.format("Project '%s' (%s) created with delivery pipeline!",
+                            created.getName(), selectedType), ToastNotification.ToastType.SUCCESS);
                 } else {
                     projectService.updateProject(existing.getId(), name, descField.getText().trim(),
                             repo, branchField.getText().trim(), typeCombo.getValue(), existing.getStatus());
@@ -330,20 +701,41 @@ public class ProjectsView extends VBox {
 
         btnBox.getChildren().addAll(cancelBtn, saveBtn);
 
+        Label lblName = new Label("Project Name:");
+        lblName.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        Label lblDesc = new Label("Description:");
+        lblDesc.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        Label lblRepo = new Label("Repository URL / Local Path:");
+        lblRepo.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        Label lblBranch = new Label("Default Branch:");
+        lblBranch.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+        Label lblType = new Label("Project Type:");
+        lblType.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
+
         form.getChildren().addAll(
                 titleLabel,
                 errorBanner,
-                new Label("Project Name:"), nameField,
-                new Label("Description:"), descField,
-                new Label("Repository URL:"), repoField,
-                new Label("Default Branch:"), branchField,
-                new Label("Project Type:"), typeCombo,
+                lblName, nameField,
+                lblDesc, descField,
+                lblRepo, repoField,
+                lblBranch, branchField,
+                lblType, typeCombo,
                 btnBox
         );
 
-        Scene scene = new Scene(form, 480, 520);
+        ScrollPane modalScroll = new ScrollPane(form);
+        modalScroll.setFitToWidth(true);
+        modalScroll.setStyle("-fx-background-color: transparent; -fx-background: #181926; -fx-padding: 0;");
+
+        Scene scene = new Scene(modalScroll, 520, 620);
         scene.getStylesheets().add(getClass().getResource("/css/devopshub.css").toExternalForm());
         modal.setScene(scene);
         modal.showAndWait();
+    }
+
+    public void setSearchQuery(String query) {
+        if (searchField != null) {
+            searchField.setText(query != null ? query : "");
+        }
     }
 }

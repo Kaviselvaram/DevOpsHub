@@ -86,14 +86,14 @@ public class PipelineDetailView extends VBox {
         titleRow.setAlignment(Pos.CENTER_LEFT);
 
         Label nameLabel = new Label(pipeline.getName());
-        nameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #0F172A;");
+        nameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
 
         StatusBadge statusBadge = new StatusBadge(pipeline.getLastExecutionStatus());
         titleRow.getChildren().addAll(nameLabel, statusBadge);
 
         Label descLabel = new Label(pipeline.getDescription() != null && !pipeline.getDescription().isEmpty()
                 ? pipeline.getDescription() : "Automated delivery workflow.");
-        descLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #475569;");
+        descLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #8A8D9E;");
 
         HBox metaRow = new HBox(16);
         metaRow.setAlignment(Pos.CENTER_LEFT);
@@ -123,6 +123,11 @@ public class PipelineDetailView extends VBox {
             mainLayout.navigateToExecutionDetail(ex.getId());
         });
 
+        Button scheduleBtn = new Button("Schedule");
+        scheduleBtn.getStyleClass().add("btn-secondary");
+        scheduleBtn.setGraphic(new SvgIcon(SvgIcon.IconName.CALENDAR, 12, Color.web("#8B5CF6")));
+        scheduleBtn.setOnAction(e -> showScheduleDialog());
+
         Button configBtn = new Button("Configure");
         configBtn.getStyleClass().add("btn-secondary");
         configBtn.setGraphic(new SvgIcon(SvgIcon.IconName.SETTINGS, 12, Color.web("#64748B")));
@@ -145,7 +150,7 @@ public class PipelineDetailView extends VBox {
         backBtn.getStyleClass().add("btn-secondary");
         backBtn.setOnAction(e -> mainLayout.navigateToPipelines());
 
-        actions.getChildren().addAll(runBtn, configBtn, dupBtn, backBtn);
+        actions.getChildren().addAll(runBtn, scheduleBtn, configBtn, dupBtn, backBtn);
         card.getChildren().addAll(info, spacer, actions);
         this.getChildren().add(card);
     }
@@ -269,5 +274,87 @@ public class PipelineDetailView extends VBox {
         }
         List<Execution> runs = executionRepository.findByPipelineId(pipeline.getId());
         executionsTable.getItems().setAll(runs);
+    }
+
+    private void showScheduleDialog() {
+        javafx.stage.Stage modal = new javafx.stage.Stage();
+        modal.initOwner(mainLayout.getPrimaryStage());
+        modal.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        modal.setTitle("Automated Scheduler — " + pipeline.getName());
+
+        VBox form = new VBox(16);
+        form.setStyle("-fx-background-color: #181926; -fx-padding: 24px;");
+
+        Label headerTitle = new Label("Automated Pipeline Trigger Schedule");
+        headerTitle.setStyle("-fx-font-size: 16px; -fx-font-weight: 800; -fx-text-fill: #FFFFFF;");
+
+        Label subtitle = new Label("Configure automated periodic executions while DevOpsHub desktop is running.");
+        subtitle.setStyle("-fx-font-size: 12px; -fx-text-fill: #8A8D9E;");
+
+        var schedulerService = com.devopshub.scheduler.PipelineSchedulerService.getInstance();
+        var currentJob = schedulerService.getScheduledJobs().stream()
+                .filter(j -> j.getPipelineId().equals(pipeline.getId()))
+                .findFirst();
+
+        Label statusLabel = new Label(currentJob.map(j ->
+                String.format("Currently scheduled: Runs every %ds (Executions: %d)", j.getIntervalSeconds(), j.getExecutionCount()))
+                .orElse("Status: Not currently scheduled"));
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #38BDF8;");
+
+        ComboBox<String> intervalCombo = new ComboBox<>();
+        intervalCombo.getItems().addAll(
+                "Every 5 minutes (Testing)",
+                "Every 15 minutes",
+                "Every 30 minutes",
+                "Every 1 hour",
+                "Every 6 hours",
+                "Every 24 hours (Daily)"
+        );
+        intervalCombo.setValue("Every 1 hour");
+        intervalCombo.setMaxWidth(Double.MAX_VALUE);
+
+        Label disclaimer = new Label("Notice: Desktop schedules execute while this application is open. Scheduled runs pause when the desktop app is closed.");
+        disclaimer.setWrapText(true);
+        disclaimer.setStyle("-fx-font-size: 11px; -fx-text-fill: #F59E0B; -fx-background-color: #261F18; -fx-padding: 10px; -fx-background-radius: 6px;");
+
+        HBox btnBox = new HBox(10);
+        btnBox.setAlignment(Pos.CENTER_RIGHT);
+
+        Button cancelBtn = new Button("Close");
+        cancelBtn.getStyleClass().add("btn-secondary");
+        cancelBtn.setOnAction(ev -> modal.close());
+
+        Button unscheduleBtn = new Button("Unschedule");
+        unscheduleBtn.getStyleClass().add("btn-secondary");
+        unscheduleBtn.setStyle("-fx-text-fill: #F43F5E;");
+        unscheduleBtn.setOnAction(ev -> {
+            schedulerService.unschedulePipeline(pipeline.getId());
+            mainLayout.showToast("Schedule removed for " + pipeline.getName(), ToastNotification.ToastType.INFO);
+            modal.close();
+        });
+
+        Button saveBtn = new Button("Save Schedule");
+        saveBtn.getStyleClass().add("btn-primary");
+        saveBtn.setOnAction(ev -> {
+            long seconds = switch (intervalCombo.getValue()) {
+                case "Every 5 minutes (Testing)" -> 300L;
+                case "Every 15 minutes" -> 900L;
+                case "Every 30 minutes" -> 1800L;
+                case "Every 6 hours" -> 21600L;
+                case "Every 24 hours (Daily)" -> 86400L;
+                default -> 3600L; // 1 hour
+            };
+            schedulerService.schedulePipeline(pipeline.getId(), seconds);
+            mainLayout.showToast(String.format("Scheduled '%s' to run every %s", pipeline.getName(), intervalCombo.getValue()), ToastNotification.ToastType.SUCCESS);
+            modal.close();
+        });
+
+        btnBox.getChildren().addAll(cancelBtn, unscheduleBtn, saveBtn);
+        form.getChildren().addAll(headerTitle, subtitle, statusLabel, new Label("Execution Interval:"), intervalCombo, disclaimer, btnBox);
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(form, 480, 360);
+        scene.getStylesheets().add(getClass().getResource("/css/devopshub.css").toExternalForm());
+        modal.setScene(scene);
+        modal.showAndWait();
     }
 }

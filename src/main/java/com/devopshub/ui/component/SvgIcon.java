@@ -43,13 +43,22 @@ public class SvgIcon extends StackPane {
         COPY,
         LIGHTBULB,
         GIT_BRANCH,
-        CLOCK
+        CLOCK,
+        HOME,
+        BELL,
+        GRID,
+        LIST,
+        MAP,
+        USER,
+        SHARE,
+        CALENDAR
     }
 
     private static final Map<IconName, String> PATH_DATA = new HashMap<>();
 
     static {
         // Standard Lucide/Feather 24x24 SVG vector path definitions
+        PATH_DATA.put(IconName.CALENDAR, "M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z M16 2v4 M8 2v4 M3 10h18");
         PATH_DATA.put(IconName.DASHBOARD, "M3 3h7v7H3zm11 0h7v7h-7zm0 11h7v7h-7zM3 14h7v7H3z");
         PATH_DATA.put(IconName.PROJECTS, "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z");
         PATH_DATA.put(IconName.PIPELINES, "M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83");
@@ -79,6 +88,13 @@ public class SvgIcon extends StackPane {
         PATH_DATA.put(IconName.LIGHTBULB, "M9 18h6 M10 22h4 M12 2a7 7 0 0 0-4.95 11.95c.78.78 1.25 1.83 1.25 2.95h7.4c0-1.12.47-2.17 1.25-2.95A7 7 0 0 0 12 2z");
         PATH_DATA.put(IconName.GIT_BRANCH, "M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm12 12a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 9v6a3 3 0 0 0 3 3h6");
         PATH_DATA.put(IconName.CLOCK, "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v5l4 2");
+        PATH_DATA.put(IconName.HOME, "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10");
+        PATH_DATA.put(IconName.BELL, "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0");
+        PATH_DATA.put(IconName.GRID, "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z");
+        PATH_DATA.put(IconName.LIST, "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01");
+        PATH_DATA.put(IconName.MAP, "M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z M8 2v16 M16 6v16");
+        PATH_DATA.put(IconName.USER, "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z");
+        PATH_DATA.put(IconName.SHARE, "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8 M16 6l-4-4-4 4 M12 2v13");
     }
 
     private final SVGPath svgPath;

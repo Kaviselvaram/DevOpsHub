@@ -30,6 +30,11 @@ public class AnalyticsView extends VBox {
     private BarChart<String, Number> barChart;
     private TableView<Map.Entry<String, Integer>> failureRankingTable;
 
+    private Label summary1;
+    private Label summary2;
+    private Label summary3;
+    private Label summary4;
+
     public AnalyticsView(DashboardService dashboardService) {
         this.dashboardService = dashboardService;
 
@@ -48,7 +53,7 @@ public class AnalyticsView extends VBox {
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         Label rangeLabel = new Label("Time Window:");
-        rangeLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        rangeLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #E2E8F0;");
 
         timeRangeFilter = new ComboBox<>();
         timeRangeFilter.getItems().addAll("ALL TIME (LIFETIME)", "LAST 30 DAYS", "LAST 7 DAYS");
@@ -144,18 +149,15 @@ public class AnalyticsView extends VBox {
         Label insightsTitle = new Label("Operational Intelligence Summary");
         insightsTitle.getStyleClass().add("card-header");
 
-        DashboardMetrics metrics = dashboardService.getMetrics();
-        Label summary1 = new Label(String.format("• Delivery Reliability: %.1f%% across %d recorded executions.",
-                metrics.getSuccessRate(), metrics.getTotalExecutions()));
-        Label summary2 = new Label(String.format("• Mean Build & Verification Duration: %.1f seconds.",
-                metrics.getAvgDurationSeconds()));
-        Label summary3 = new Label("• Primary Root Cause: Test expectation assertion mismatches in login/token validation.");
-        Label summary4 = new Label("• Optimization Recommendation: Verify unhandled NullPointerExceptions and ensure HTTP 401 response mappings.");
+        summary1 = new Label("• Delivery Reliability: calculating...");
+        summary2 = new Label("• Mean Build & Verification Duration: calculating...");
+        summary3 = new Label("• Primary Root Cause: analyzing failure history...");
+        summary4 = new Label("• Optimization Recommendation: evaluating run patterns...");
 
-        summary1.setStyle("-fx-font-size: 13px; -fx-text-fill: #334155;");
-        summary2.setStyle("-fx-font-size: 13px; -fx-text-fill: #334155;");
-        summary3.setStyle("-fx-font-size: 13px; -fx-text-fill: #334155;");
-        summary4.setStyle("-fx-font-size: 13px; -fx-text-fill: #047857; -fx-font-weight: bold;");
+        summary1.setStyle("-fx-font-size: 13px; -fx-text-fill: #94A3B8;");
+        summary2.setStyle("-fx-font-size: 13px; -fx-text-fill: #94A3B8;");
+        summary3.setStyle("-fx-font-size: 13px; -fx-text-fill: #94A3B8;");
+        summary4.setStyle("-fx-font-size: 13px; -fx-text-fill: #34D399; -fx-font-weight: bold;");
 
         insightsCard.getChildren().addAll(insightsTitle, summary1, summary2, summary3, summary4);
         row.getChildren().addAll(rankCard, insightsCard);
@@ -163,7 +165,8 @@ public class AnalyticsView extends VBox {
     }
 
     public void refresh() {
-        DashboardMetrics metrics = dashboardService.getMetrics();
+        String selectedWindow = timeRangeFilter != null ? timeRangeFilter.getValue() : "ALL TIME (LIFETIME)";
+        DashboardMetrics metrics = dashboardService.getMetrics(selectedWindow);
 
         // Update PieChart
         ObservableList<PieChart.Data> pieData = FXCollections.observableArrayList();
@@ -186,14 +189,64 @@ public class AnalyticsView extends VBox {
             for (Map.Entry<String, Integer> entry : catCounts.entrySet()) {
                 series.getData().add(new XYChart.Data<>(entry.getKey(), entry.getValue()));
             }
-        } else {
-            series.getData().add(new XYChart.Data<>("ASSERTION_FAILURE", 1));
+            barChart.getData().add(series);
         }
-        barChart.getData().add(series);
 
         // Update Ranking Table
         Map<String, Integer> failMap = dashboardService.getFrequentlyFailingPipelines();
         ObservableList<Map.Entry<String, Integer>> rankList = FXCollections.observableArrayList(failMap.entrySet());
         failureRankingTable.setItems(rankList);
+
+        // Update Dynamic Operational Intelligence Summary
+        summary1.setText(String.format("• Delivery Reliability: %.1f%% across %d recorded executions.",
+                metrics.getSuccessRate(), metrics.getTotalExecutions()));
+        summary2.setText(String.format("• Mean Build & Verification Duration: %.1f seconds.",
+                metrics.getAvgDurationSeconds()));
+
+        String topCategory = null;
+        int maxCount = 0;
+        if (catCounts != null && !catCounts.isEmpty()) {
+            for (Map.Entry<String, Integer> entry : catCounts.entrySet()) {
+                if (entry.getValue() > maxCount) {
+                    maxCount = entry.getValue();
+                    topCategory = entry.getKey();
+                }
+            }
+        }
+
+        if (metrics.getFailedExecutions() == 0) {
+            summary3.setText("• Primary Root Cause: No pipeline failures detected in recorded executions.");
+            summary4.setText("• Optimization Recommendation: Build pipelines are stable. Maintain automated verification coverage.");
+        } else if (topCategory != null) {
+            switch (topCategory.toUpperCase()) {
+                case "COMPILATION_ERROR" -> {
+                    summary3.setText("• Primary Root Cause: Java compiler error or symbol resolution failure.");
+                    summary4.setText("• Optimization Recommendation: Check source syntax errors, classpath imports, and Java release version.");
+                }
+                case "ASSERTION_FAILURE" -> {
+                    summary3.setText("• Primary Root Cause: Unit or integration test assertion expectations mismatch.");
+                    summary4.setText("• Optimization Recommendation: Inspect failed test cases, verify mock responses, and ensure error handling maps correctly.");
+                }
+                case "TIMEOUT" -> {
+                    summary3.setText("• Primary Root Cause: Stage execution exceeded allocated timeout limit.");
+                    summary4.setText("• Optimization Recommendation: Increase stage timeout configuration or optimize heavy compilation/testing tasks.");
+                }
+                case "DATABASE_CONNECTION" -> {
+                    summary3.setText("• Primary Root Cause: Database connectivity or authentication credentials failure.");
+                    summary4.setText("• Optimization Recommendation: Verify database host/port availability and check connection pool credentials.");
+                }
+                case "DEPENDENCY_RESOLUTION" -> {
+                    summary3.setText("• Primary Root Cause: Missing dependencies or unavailable repository artifacts.");
+                    summary4.setText("• Optimization Recommendation: Verify pom.xml dependency versions and ensure repository network access.");
+                }
+                default -> {
+                    summary3.setText("• Primary Root Cause: " + topCategory + " (" + maxCount + " occurrences).");
+                    summary4.setText("• Optimization Recommendation: Review recent stderr logs in Log Viewer and inspect failed stage exit codes.");
+                }
+            }
+        } else {
+            summary3.setText("• Primary Root Cause: Unclassified failure in pipeline execution stages.");
+            summary4.setText("• Optimization Recommendation: Review recent stderr logs in Log Viewer and verify stage commands.");
+        }
     }
 }

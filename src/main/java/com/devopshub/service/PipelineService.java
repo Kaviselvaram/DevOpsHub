@@ -81,13 +81,9 @@ public class PipelineService {
             }
             pipeline.setStages(stages);
             validator.validate(pipeline);
-        }
-
-        pipelineRepository.update(pipeline);
-        if (stages != null) {
-            for (Stage s : stages) {
-                pipelineRepository.saveStage(s);
-            }
+            pipelineRepository.updateWithStages(pipeline, stages);
+        } else {
+            pipelineRepository.update(pipeline);
         }
         return pipeline;
     }
@@ -108,27 +104,27 @@ public class PipelineService {
         List<Stage> stages = new ArrayList<>();
 
         Stage checkout = new Stage(UUID.randomUUID().toString(), pipelineId, "Checkout Source", StageType.CHECKOUT, 1,
-                "echo \"Checking out git ref refs/heads/main...\"", 120, true, null);
+                "checkout", 120, true, null);
 
-        Stage build = new Stage(UUID.randomUUID().toString(), pipelineId, "Build Application", StageType.BUILD, 2,
-                "echo \"Compiling source code with javac...\"", 300, true, null);
+        Stage build = new Stage(UUID.randomUUID().toString(), pipelineId, "Compile Application", StageType.BUILD, 2,
+                "if [ -f pom.xml ]; then mvn compile -B; elif [ -f package.json ]; then npm run build; elif [ -f build.gradle ]; then gradle classes; else make; fi", 300, true, null);
         build.getDependsOnStageIds().add(checkout.getId());
 
         Stage test = new Stage(UUID.randomUUID().toString(), pipelineId, "Unit Tests", StageType.TEST, 3,
-                "echo \"Running test suites...\"", 300, true, "FORK_TEST");
+                "if [ -f pom.xml ]; then mvn test -B; elif [ -f package.json ]; then npm test; elif [ -f build.gradle ]; then gradle test; else make test; fi", 300, true, "FORK_TEST");
         test.getDependsOnStageIds().add(build.getId());
 
-        Stage security = new Stage(UUID.randomUUID().toString(), pipelineId, "SAST Security Scan", StageType.SECURITY, 4,
-                "echo \"Analyzing codebase dependencies for CVEs...\"", 300, true, "FORK_TEST");
+        Stage security = new Stage(UUID.randomUUID().toString(), pipelineId, "Security Scan", StageType.SECURITY, 4,
+                "if [ -f pom.xml ]; then mvn dependency:tree -q; elif [ -f package.json ]; then npm audit; else echo 'No security scanner configured for generic project'; fi", 300, true, "FORK_TEST");
         security.getDependsOnStageIds().add(build.getId());
 
-        Stage pkg = new Stage(UUID.randomUUID().toString(), pipelineId, "Package Binary", StageType.PACKAGE, 5,
-                "echo \"Packaging distribution bundle...\"", 180, true, null);
+        Stage pkg = new Stage(UUID.randomUUID().toString(), pipelineId, "Package Artifact", StageType.PACKAGE, 5,
+                "if [ -f pom.xml ]; then mvn package -B -DskipTests=true; elif [ -f package.json ]; then npm pack; elif [ -f build.gradle ]; then gradle assemble; else make package; fi", 180, true, null);
         pkg.getDependsOnStageIds().add(test.getId());
         pkg.getDependsOnStageIds().add(security.getId());
 
         Stage deploy = new Stage(UUID.randomUUID().toString(), pipelineId, "Deploy Staging", StageType.DEPLOY, 6,
-                "echo \"Deploying application to staging cluster...\"", 240, true, null);
+                "deploy", 240, true, null);
         deploy.getDependsOnStageIds().add(pkg.getId());
 
         stages.add(checkout);

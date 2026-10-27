@@ -34,7 +34,7 @@ public class Stage {
         this.name = name;
         this.stageType = stageType != null ? stageType : StageType.BUILD;
         this.stageOrder = stageOrder;
-        this.command = command != null ? command : "echo \"Executing stage...\"";
+        this.command = command != null ? command : "mvn compile -B";
         this.timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 300;
         this.enabled = enabled;
         this.parallelGroup = parallelGroup;
